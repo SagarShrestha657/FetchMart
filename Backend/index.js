@@ -7,10 +7,12 @@ import randomUseragent from "random-useragent";
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.use(cors({origin:[
-    "http://localhost:5173",
-    "https://fetch-mart.vercel.app"
-]}));
+app.use(cors({
+    origin: [
+        "http://localhost:5173",
+        "https://fetch-mart.vercel.app"
+    ]
+}));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5001;

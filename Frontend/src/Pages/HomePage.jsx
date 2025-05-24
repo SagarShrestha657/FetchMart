@@ -24,9 +24,9 @@ function HomePage() {
   const cancelSource = useRef(null);
 
   const BACKEND_URL =
-  import.meta.env.VITE_MODE === "development"
-    ? "http://localhost:5001/api"
-    : import.meta.env.VITE_BACKEND_URL;
+    import.meta.env.MODE === "development"
+      ? "http://localhost:5001/api"
+      : import.meta.env.VITE_BACKEND_URL;
 
   const fetchResults = async (reset = false, nextPage = 1, newQuery = null, isSearch = false) => {
     if (!(newQuery ?? query).trim()) return;
