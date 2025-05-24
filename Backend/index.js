@@ -27,8 +27,10 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         args: [
             "--no-sandbox",
             "--disable-setuid-sandbox"
-        ]
-        // Do NOT set executablePath at all!
+        ],
+        ...(isProduction && {
+            executablePath: "/tmp/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/chrome"
+        })
     };
 
     const browser = await puppeteer.launch(launchOptions);
