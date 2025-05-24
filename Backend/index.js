@@ -21,9 +21,16 @@ const PORT = process.env.PORT || 5001;
 async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
 
+    const isProduction = process.env.NODE_ENV === "production";
     const launchOptions = {
-        headless: "New",
-        args: [],
+        headless: "new",
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox"
+        ],
+        ...(isProduction && {
+            executablePath: "/opt/render/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/chrome"
+        })
     };
 
     const browser = await puppeteer.launch(launchOptions);
@@ -39,7 +46,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
 
     // Log the HTML for debugging
     const html = await page.content();
-    
+
     console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
 
     const products = await pageEvaluateFunc(page);
