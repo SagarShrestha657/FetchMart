@@ -3,6 +3,7 @@ import cors from "cors";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import randomUseragent from "random-useragent";
+import { execSync } from "child_process"
 
 puppeteer.use(StealthPlugin());
 
@@ -22,6 +23,15 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
 
     const isProduction = process.env.NODE_ENV === "production";
+
+    if (isProduction) {
+        try {
+            console.log("Listing /usr/bin:");
+            console.log(execSync("ls -l /usr/bin | grep chrome || true").toString());
+            console.log("Listing /opt/render/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/:");
+            console.log(execSync("ls -l /opt/render/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/ || true").toString());
+        } catch (e) { console.error(e); }
+    }
     const launchOptions = {
         headless: "new",
         args: [
@@ -29,7 +39,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
             "--disable-setuid-sandbox"
         ],
         ...(isProduction && {
-            executablePath: "/usr/bin/google-chrome-stable"
+            executablePath: "/usr/bin/chromium-browser"
         })
     };
 
