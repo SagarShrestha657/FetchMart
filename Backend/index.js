@@ -8,7 +8,8 @@ puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(cors({origin:[
-    "https://localhost:5173"
+    "http://localhost:5173",
+    "https://fetch-mart.vercel.app"
 ]}));
 app.use(express.json());
 
