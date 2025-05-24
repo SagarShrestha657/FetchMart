@@ -25,7 +25,7 @@ function HomePage() {
 
   const BACKEND_URL =
   import.meta.env.VITE_MODE === "development"
-    ? "http://localhost:5001"
+    ? "http://localhost:5001/api"
     : import.meta.env.VITE_BACKEND_URL;
 
   const fetchResults = async (reset = false, nextPage = 1, newQuery = null, isSearch = false) => {
@@ -58,6 +58,7 @@ function HomePage() {
       }
       setHasMore(true);
     } catch (err) {
+      console.log(err)
       if (!axios.isCancel(err)) alert("Error fetching results");
     }
     setLoading(false);
