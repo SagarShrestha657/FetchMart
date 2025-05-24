@@ -29,7 +29,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
             "--disable-setuid-sandbox"
         ],
         ...(isProduction && {
-            executablePath: "/opt/render/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/chrome"
+            executablePath: "/usr/bin/google-chrome-stable"
         })
     };
 
