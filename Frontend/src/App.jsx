@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import HomePage from './Pages/HomePage';
 import WishlistPage from './Pages/WishlistPage';
-import NavbarComponent from './Components/NavbarComponent'
-import DarkModeToggle from './Components/DarkModeToggle';
+import NavbarComponent from './Components/NavbarComponent';
+import DarkModeToggle  from './Components/DarkModeToggle'
 import useStore from './states/store';
 import './App.css';
 import AboutPage from './Pages/AboutPage';
