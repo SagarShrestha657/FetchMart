@@ -3,6 +3,10 @@ import cors from "cors";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import randomUseragent from "random-useragent";
+import { EventEmitter } from 'events';
+
+// Increase max listeners limit
+EventEmitter.defaultMaxListeners = 50;
 
 puppeteer.use(StealthPlugin());
 
@@ -17,51 +21,162 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5001;
 
-// --- Scraper Helper ---
-async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
-    const userAgent = randomUseragent.getRandom();
+// Global request tracking
+let currentRequest = {
+    controller: null,
+    browsers: [],
+    cleanup: null
+};
 
+// Function to abort current request and cleanup
+async function abortCurrentRequest() {
+    if (currentRequest.controller) {
+        console.log("Aborting previous request...");
+        currentRequest.controller.abort();
+        if (currentRequest.cleanup) {
+            try {
+                await currentRequest.cleanup();
+            } catch (err) {
+                console.error("Error during cleanup:", err.message);
+            }
+        }
+        // Force kill any remaining browser processes
+        if (process.platform === 'win32') {
+            try {
+                require('child_process').execSync('taskkill /F /IM chrome.exe /T');
+            } catch (err) {
+                // Ignore errors if no chrome processes found
+            }
+        }
+        currentRequest.controller = null;
+        currentRequest.browsers = [];
+        currentRequest.cleanup = null;
+    }
+}
+
+// --- Scraper Helper ---
+async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, trackBrowser, abortSignal) {
+    const userAgent = randomUseragent.getRandom();
     const isProduction = process.env.NODE_ENV === "production";
+
     const launchOptions = {
         headless: "new",
         args: [
             "--no-sandbox",
-            "--disable-setuid-sandbox"
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-extensions",
+            "--single-process",
+            "--no-zygote"
         ],
         ...(isProduction && {
-            executablePath: "/tmp/.cache/puppeteer/chrome/linux-136.0.7103.94/chrome-linux64/chrome"
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome"
         })
     };
 
-    const browser = await puppeteer.launch(launchOptions);
-    const page = await browser.newPage();
+    let browser;
+    let abortListener;
+    try {
+        browser = await puppeteer.launch(launchOptions);
+        if (typeof trackBrowser === "function") trackBrowser(browser);
 
-    if (userAgent) {
-        await page.setUserAgent(userAgent);
+        if (abortSignal.aborted) {
+            await browser.close();
+            throw new Error("Aborted before navigation");
+        }
+
+        // Create a single abort listener that will be properly cleaned up
+        abortListener = async () => {
+            console.log("Abort signal received, closing browser");
+            try {
+                if (browser) {
+                    const pages = await browser.pages();
+                    await Promise.all(pages.map(page => page.close().catch(() => {})));
+                    await browser.close();
+                }
+            } catch (err) {
+                console.error("Error closing browser:", err.message);
+            }
+        };
+
+        // Add the listener and store it for cleanup
+        abortSignal.addEventListener("abort", abortListener, { once: true });
+
+        const page = await browser.newPage();
+        await page.setDefaultNavigationTimeout(30000);
+        await page.setDefaultTimeout(30000);
+
+        if (userAgent) await page.setUserAgent(userAgent);
+        await page.setViewport({ width: 1280, height: 800 });
+
+        // Add error handling for navigation
+        try {
+            await page.goto(url, {
+                waitUntil: "networkidle2",
+                timeout: 30000,
+                signal: abortSignal
+            });
+        } catch (err) {
+            if (err.name === 'AbortError' || err.message.includes('aborted')) {
+                throw err;
+            }
+            console.error("Navigation error:", err.message);
+            throw err;
+        }
+
+        const html = await page.content();
+        console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
+
+        // Add retry logic for page evaluation
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                const products = await pageEvaluateFunc(page);
+                return products;
+            } catch (err) {
+                if (err.message.includes("Execution context was destroyed")) {
+                    retries--;
+                    if (retries === 0) throw err;
+                    await new Promise(res => setTimeout(res, 1000));
+                    continue;
+                }
+                throw err;
+            }
+        }
+    } catch (error) {
+        if (error.name === "AbortError" || error.message.includes("aborted")) {
+            console.log("Navigation aborted");
+            throw error;
+        }
+        console.error("Scraping error:", error);
+        return null;
+    } finally {
+        // Clean up the abort listener
+        if (abortListener && abortSignal) {
+            abortSignal.removeEventListener("abort", abortListener);
+        }
+        if (browser) {
+            try {
+                const pages = await browser.pages();
+                await Promise.all(pages.map(page => page.close().catch(() => {})));
+                await browser.close();
+            } catch (err) {
+                console.error("Error closing browser:", err.message);
+            }
+        }
     }
-
-    await page.setViewport({ width: 1280, height: 800 });
-
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-
-    // Log the HTML for debugging
-    const html = await page.content();
-
-    console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
-
-    const products = await pageEvaluateFunc(page);
-
-    await browser.close();
-    return products;
 }
 
-// Helper: Retry a function up to n times until it returns a non-empty result
-async function retryFetch(fn, maxTries = 3, delayMs = 0) { // set delayMs to 0
+async function retryFetch(fn, maxTries = 3, delayMs = 0) {
     let lastResult, lastError;
     for (let i = 0; i < maxTries; i++) {
         try {
             lastResult = await fn();
-            // Check for Flipkart: .items or array, for others: array
+            if (lastResult === null) {
+                throw new Error("Scraping returned null");
+            }
             if (
                 (lastResult && Array.isArray(lastResult) && lastResult.length > 0) ||
                 (lastResult && lastResult.items && lastResult.items.length > 0)
@@ -69,16 +184,27 @@ async function retryFetch(fn, maxTries = 3, delayMs = 0) { // set delayMs to 0
                 return lastResult;
             }
         } catch (err) {
+            if (err.name === "AbortError" || err.message.includes("aborted")) {
+                console.log("Aborted during retry, no further retries.");
+                throw err;
+            }
+            if (err.message.includes("Execution context was destroyed")) {
+                console.log("Context destroyed, retrying...");
+                lastError = err;
+                continue;
+            }
             lastError = err;
         }
-        if (i < maxTries - 1 && delayMs > 0) await new Promise(res => setTimeout(res, delayMs));
+        if (i < maxTries - 1 && delayMs > 0) {
+            await new Promise(res => setTimeout(res, delayMs));
+        }
     }
     if (lastError) throw lastError;
     return lastResult;
 }
 
 // --- Flipkart ---
-async function scrapeFlipkart(query, page = 1, limit = 10) {
+async function scrapeFlipkart(query, page = 1, limit = 10, trackBrowser, abortSignal) {
     const url = `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`;
     return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
         // Scroll further based on page
@@ -86,6 +212,7 @@ async function scrapeFlipkart(query, page = 1, limit = 10) {
             await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
             await new Promise(res => setTimeout(res, 300));
         }
+
         return pageObj.evaluate((limit, page) => {
             const items = [];
             // Desktop cards
@@ -342,18 +469,24 @@ async function scrapeFlipkart(query, page = 1, limit = 10) {
             // Only return the paginated array, not an object
             return items.slice(start, start + limit);
         }, limit, page);
-    });
+    }, trackBrowser, abortSignal);
 }
 
 // --- Amazon ---
-async function scrapeAmazon(query, page = 1, limit = 10) {
+async function scrapeAmazon(query, page = 1, limit = 10, trackBrowser, abortSignal) {
     const url = `https://www.amazon.in/s?k=${encodeURIComponent(query)}`;
     return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
         await pageObj.waitForSelector("div.s-result-item[data-component-type='s-search-result']", { timeout: 15000 }).catch(() => { });
+        const found = await pageObj.$("div.s-result-item[data-component-type='s-search-result']");
+        if (!found) {
+            console.warn("No products found");
+            return [];
+        }
         for (let i = 0; i < page * 6; i++) {
             await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
             await new Promise(resolve => setTimeout(resolve, 300));
         }
+        await new Promise(resolve => setTimeout(resolve, 1500));
         return pageObj.evaluate((limit, page) => {
             const items = [];
             const cards = document.querySelectorAll("div.s-result-item[data-component-type='s-search-result']");
@@ -451,18 +584,25 @@ async function scrapeAmazon(query, page = 1, limit = 10) {
             const start = (page - 1) * limit;
             return items.slice(start, start + limit);
         }, limit, page);
-    });
+    }, trackBrowser, abortSignal);
 }
 
 // --- Meesho ---
-async function scrapeMeesho(query, page = 1, limit = 10) {
+async function scrapeMeesho(query, page = 1, limit = 10, trackBrowser, abortSignal) {
     const url = `https://www.meesho.com/search?q=${encodeURIComponent(query)}`;
     return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
         await pageObj.waitForSelector("a[href*='/p/']", { timeout: 15000 }).catch(() => { });
+        const found = await pageObj.$("a[href*='/p/']");
+        if (!found) {
+            console.warn("No products found");
+            return [];
+        }
         for (let i = 0; i < page * 6; i++) {
             await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
             await new Promise(resolve => setTimeout(resolve, 300));
         }
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         return pageObj.evaluate((limit, page) => {
             const items = [];
             const cards = document.querySelectorAll("a[href*='/p/']");
@@ -533,157 +673,303 @@ async function scrapeMeesho(query, page = 1, limit = 10) {
             const start = (page - 1) * limit;
             return items.slice(start, start + limit);
         }, limit, page);
-    });
+    }, trackBrowser, abortSignal);
 }
 
 // --- Myntra ---
-async function scrapeMyntra(query, page = 1, limit = 10) {
-    // Use the query as the category path and as rawQuery
-    const category = encodeURIComponent(query.trim().toLowerCase());
-    const url = `https://www.myntra.com/${category}?rawQuery=${encodeURIComponent(query)}`;
+async function scrapeMyntra(query, page = 1, limit = 10, trackBrowser, abortSignal) {
+    const url = `https://www.myntra.com/${encodeURIComponent(query.trim().toLowerCase())}?rawQuery=${encodeURIComponent(query)}`;
     return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
-        // Remove timeout and wait for any product card or image to appear (no timeout)
-        await pageObj.waitForSelector("li.product-base img, li.item img").catch(() => { });
+        try {
+            // Set a more realistic viewport
+            await pageObj.setViewport({ width: 1366, height: 768 });
 
-        // Aggressively scroll to load more products (increase scrolls and delay)
-        for (let i = 0; i < page * 6; i++) {
-            await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
-            await new Promise(resolve => setTimeout(resolve, 300));
-        }
+            // Function to analyze page content
+            const analyzePageContent = async () => {
+                return await pageObj.evaluate(() => {
+                    const content = {
+                        title: document.title,
+                        url: window.location.href,
+                        bodyLength: document.body.innerText.length,
+                        hasProductGrid: !!document.querySelector('div.product-grid-base'),
+                        hasProductCards: !!document.querySelector('li.product-base, div.product-base'),
+                        hasSearchResults: !!document.querySelector('div[class*="search"], div[class*="results"]'),
+                        hasFilters: !!document.querySelector('div[class*="filter"], div[class*="facet"]'),
+                        hasPagination: !!document.querySelector('div[class*="pagination"], div[class*="page"]'),
+                        hasError: !!document.querySelector('div[class*="error"], div[class*="not-found"]'),
+                        hasMaintenance: !!document.querySelector('div[class*="maintenance"], div[class*="down"]'),
+                        hasCaptcha: !!document.querySelector('iframe[src*="captcha"], div[class*="captcha"]'),
+                        hasBlock: !!document.querySelector('div[class*="block"], div[class*="access-denied"]'),
+                        hasRedirect: window.location.href.includes('block') || window.location.href.includes('verify'),
+                        hasEmptyContent: document.body.innerText.length < 1000,
+                        hasDynamicContent: !!document.querySelector('div[class*="skeleton"], div[class*="loading"]'),
+                        hasNoResults: !!document.querySelector('div[class*="no-results"], div[class*="empty-state"]'),
+                        hasSearchBox: !!document.querySelector('input[type="search"], input[placeholder*="search"]'),
+                        hasNavigation: !!document.querySelector('nav, header, div[class*="header"]'),
+                        hasFooter: !!document.querySelector('footer, div[class*="footer"]'),
+                        hasScripts: document.scripts.length,
+                        hasStyles: document.styleSheets.length,
+                        hasImages: document.images.length,
+                        hasLinks: document.links.length
+                    };
+                    console.log('Page content analysis:', content);
+                    return content;
+                });
+            };
 
-        // Extra: Wait a bit after scrolling to allow lazy-loaded images to appear
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        return pageObj.evaluate((limit, page) => {
-            const items = [];
-
-            document.querySelectorAll("li.product-base").forEach(card => {
-                // Brand
-                const brandEl = card.querySelector("h3.product-brand");
-                const brand = brandEl ? brandEl.innerText.trim() : "";
-
-                // Name
-                const nameEl = card.querySelector("h4.product-product");
-                const name = nameEl ? nameEl.innerText.trim() : "";
-
-                // Price
-                let price = null;
-                const priceEl = card.querySelector("span.product-discountedPrice") || card.querySelector("span.product-strike");
-                if (priceEl) {
-                    const priceMatch = priceEl.innerText.match(/[\d,]+/);
-                    price = priceMatch ? Number(priceMatch[0].replace(/,/g, "")) : null;
+            // Function to check for blocking/detection
+            const checkForBlocking = async () => {
+                const content = await analyzePageContent();
+                
+                if (content.hasCaptcha) {
+                    console.log('Detected: CAPTCHA page');
+                    return 'CAPTCHA';
+                }
+                if (content.hasBlock) {
+                    console.log('Detected: Block page');
+                    return 'BLOCKED';
+                }
+                if (content.hasError) {
+                    console.log('Detected: Error page');
+                    return 'ERROR';
+                }
+                if (content.hasMaintenance) {
+                    console.log('Detected: Maintenance page');
+                    return 'MAINTENANCE';
+                }
+                if (content.hasRedirect) {
+                    console.log('Detected: Redirect to blocking page');
+                    return 'REDIRECTED';
+                }
+                if (content.hasEmptyContent) {
+                    console.log('Detected: Empty or minimal content');
+                    return 'EMPTY_CONTENT';
+                }
+                if (content.hasNoResults) {
+                    console.log('Detected: No results page');
+                    return 'NO_RESULTS';
+                }
+                if (!content.hasProductGrid && !content.hasProductCards && content.bodyLength > 1000) {
+                    console.log('Detected: Page loaded but no product elements found');
+                    return 'NO_PRODUCTS';
                 }
 
-                // Link
-                const linkEl = card.querySelector("a[data-refreshpage='true'], a[target='_blank']");
-                const href = linkEl ? linkEl.getAttribute("href") : "";
-                const link = href.startsWith("http") ? href : "https://www.myntra.com/" + href.replace(/^\//, "");
+                return null;
+            };
 
-                // Image
-                let imgEl = card.querySelector("picture img.img-responsive");
-                if (!imgEl) imgEl = card.querySelector("img.img-responsive");
-                const image = imgEl ? (imgEl.src.startsWith("http") ? imgEl.src : "https:" + imgEl.src) : "";
-
-                // Discount
-                let discount = "";
-                const discountEl = card.querySelector("span.product-discountPercentage");
-                if (discountEl) discount = discountEl.innerText.replace(/[()]/g, "").trim();
-
-                // Reviews and Rating
-                let reviews = "";
-                let reviewRating = null;
-                let reviewCount = null;
-                // Rating (e.g., 4.7)
-                const ratingEl = card.querySelector(".product-ratingsContainer > span");
-                if (ratingEl) {
-                    reviewRating = parseFloat(ratingEl.innerText.trim());
-                }
-                // Review count (e.g., 35 or 56.6k)
-                const reviewCountEl = card.querySelector(".product-ratingsCount");
-                if (reviewCountEl) {
-                    const countText = reviewCountEl.innerText.replace(/[^\d.k]/gi, "").toLowerCase();
-                    if (countText.endsWith("k")) {
-                        reviewCount = Math.round(parseFloat(countText) * 1000);
-                    } else {
-                        reviewCount = Number(countText.replace(/,/g, ""));
-                    }
-                }
-                if (reviewRating !== null && reviewCount !== null) {
-                    reviews = `${reviewRating} (${reviewCount.toLocaleString()} reviews)`;
-                } else if (reviewRating !== null) {
-                    reviews = `${reviewRating}`;
-                } else if (reviewCount !== null) {
-                    reviews = `${reviewCount.toLocaleString()} reviews`;
-                }
-
-                if (name && price && link && image) {
-                    items.push({
-                        name,
-                        price,
-                        link,
-                        image,
-                        brand,
-                        discount,
-                        reviews,        // e.g., "4.7 (35 reviews)"
-                        reviewRating,   // e.g., 4.7
-                        platform: "Myntra"
-                    });
-                }
+            // Set additional headers to appear more like a real browser
+            await pageObj.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0'
             });
 
-            // New structure (May 2025)
-            // document.querySelectorAll("li.item").forEach(card => {
-            //     const nameEl = card.querySelector("h4.description");
-            //     const priceEl = card.querySelector("span.price-value");
-            //     const linkEl = card.querySelector("a[href]");
-            //     let imgEl = card.querySelector("picture img.img-responsive.preLoad.loaded");
-            //     if (!imgEl) imgEl = card.querySelector("img.img-responsive.preLoad.loaded");
-            //     if (nameEl && priceEl && linkEl && imgEl) {
-            //         const name = nameEl.innerText.trim();
-            //         const priceMatch = priceEl.innerText.match(/[\d,]+/);
-            //         const price = priceMatch ? Number(priceMatch[0].replace(/,/g, "")) : null;
-            //         const href = linkEl.getAttribute("href");
-            //         const link = href.startsWith("http") ? href : "https://www.myntra.com" + href;
-            //         const image = imgEl.src.startsWith("http") ? imgEl.src : "https:" + imgEl.src;
+            // Enable JavaScript and cookies
+            await pageObj.setJavaScriptEnabled(true);
 
-            //         items.push({ name, price, link, image, platform: "Myntra" });
+            // Set a realistic user agent
+            const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+            await pageObj.setUserAgent(userAgent);
 
-            //     }
-            // });
+            // Add random mouse movements
+            await pageObj.evaluate(() => {
+                const moveMouse = () => {
+                    const x = Math.floor(Math.random() * window.innerWidth);
+                    const y = Math.floor(Math.random() * window.innerHeight);
+                    const event = new MouseEvent('mousemove', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: x,
+                        clientY: y
+                    });
+                    document.dispatchEvent(event);
+                };
+                setInterval(moveMouse, 1000);
+            });
 
-            // // Fallback: anchor tags with product links (for future-proofing)
-            // document.querySelectorAll("a[href*='/buy/'], a[href*='/shop/']").forEach(card => {
-            //     const nameEl = card.querySelector("h4, div");
-            //     const priceEl = card.querySelector("span, div");
-            //     const imgEl = card.querySelector("img");
-            //     if (nameEl && priceEl && imgEl) {
-            //         const name = nameEl.innerText.trim();
-            //         const priceMatch = priceEl.innerText.match(/[\d,]+/);
-            //         const price = priceMatch ? Number(priceMatch[0].replace(/,/g, "")) : null;
-            //         const href = card.getAttribute("href");
-            //         const link = href.startsWith("http") ? href : "https://www.myntra.com" + href;
-            //         const image = imgEl.src.startsWith("http") ? imgEl.src : "https:" + imgEl.src;
+            // Add random scrolling behavior
+            await pageObj.evaluate(() => {
+                const randomScroll = () => {
+                    const scrollAmount = Math.floor(Math.random() * 100);
+                    window.scrollBy(0, scrollAmount);
+                };
+                setInterval(randomScroll, 2000);
+            });
 
-            //         items.push({ name, price, link, image, platform: "Myntra" });
+            // Wait for the product grid with a more natural delay
+            await pageObj.waitForSelector("div.product-grid-base", { timeout: 15000 }).catch(() => { });
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+            
+            // Initial content analysis
+            const initialContent = await analyzePageContent();
+            console.log('Initial page content:', initialContent);
+            
+            // Check for blocking after initial load
+            const blockingStatus = await checkForBlocking();
+            if (blockingStatus) {
+                console.log(`Myntra blocking detected: ${blockingStatus}`);
+                return [];
+            }
 
-            //     }
-            // });
+            // Wait for any product card to appear
+            await pageObj.waitForSelector("li.product-base, div.product-base", { timeout: 15000 }).catch(() => { });
+            const found = await pageObj.$("li.product-base, div.product-base");
+            if (!found) {
+                console.warn("No products found");
+                return [];
+            }
 
-            const start = (page - 1) * limit;
-            return items.slice(start, start + limit);
-        }, limit, page);
-    });
+            // More natural scrolling behavior
+            for (let i = 0; i < page * 6; i++) {
+                if (abortSignal?.aborted) {
+                    console.log("Scroll aborted");
+                    return [];
+                }
+                // Random scroll amount
+                const scrollAmount = Math.floor(Math.random() * 300) + 200;
+                await pageObj.evaluate((amount) => window.scrollBy(0, amount), scrollAmount);
+                // Random delay between scrolls
+                await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 300));
+
+                // Check for blocking during scrolling
+                const scrollBlockingStatus = await checkForBlocking();
+                if (scrollBlockingStatus) {
+                    console.log(`Myntra blocking detected during scroll: ${scrollBlockingStatus}`);
+                    return [];
+                }
+            }
+
+            // Random wait after scrolling
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 1000));
+
+            // Final content analysis
+            const finalContent = await analyzePageContent();
+            console.log('Final page content:', finalContent);
+
+            // Final check for blocking
+            const finalBlockingStatus = await checkForBlocking();
+            if (finalBlockingStatus) {
+                console.log(`Myntra blocking detected after scrolling: ${finalBlockingStatus}`);
+                return [];
+            }
+
+            return pageObj.evaluate((limit, page) => {
+                const items = [];
+                // Try both possible product card selectors
+                document.querySelectorAll("li.product-base, div.product-base").forEach(card => {
+                    // Brand
+                    const brandEl = card.querySelector("h3.product-brand, div.product-brand");
+                    const brand = brandEl ? brandEl.innerText.trim() : "";
+
+                    // Name
+                    const nameEl = card.querySelector("h4.product-product, div.product-product");
+                    const name = nameEl ? nameEl.innerText.trim() : "";
+
+                    // Price
+                    let price = null;
+                    const priceEl = card.querySelector("div.product-price span, span.product-price");
+                    if (priceEl) {
+                        const priceText = priceEl.innerText.replace(/[^\d]/g, "");
+                        price = Number(priceText);
+                    }
+
+                    // Link
+                    const linkEl = card.querySelector("a[data-refreshpage='true'], a[href*='/buy/']");
+                    const href = linkEl ? linkEl.getAttribute("href") : "";
+                    const link = href.startsWith("http") ? href : "https://www.myntra.com/" + href;
+
+                    // Image
+                    const imgEl = card.querySelector("picture.img-responsive img, img.img-responsive");
+                    const image = imgEl ? imgEl.src : "";
+
+                    // Discount (if available)
+                    let discount = "";
+                    const discountEl = card.querySelector("div.product-price span.product-discountedPrice, span.product-discountPercentage");
+                    if (discountEl) {
+                        discount = discountEl.innerText.trim();
+                    }
+
+                    // Reviews and Rating
+                    let reviews = "";
+                    let reviewRating = null;
+                    let reviewCount = null;
+                    const ratingEl = card.querySelector("div.product-ratingsContainer span, span.product-ratingsContainer");
+                    if (ratingEl) {
+                        reviewRating = parseFloat(ratingEl.innerText.trim());
+                    }
+                    const reviewCountEl = card.querySelector("div.product-ratingsCount, span.product-ratingsCount");
+                    if (reviewCountEl) {
+                        const countText = reviewCountEl.innerText.replace(/[^\d.k]/gi, "").toLowerCase();
+                        if (countText.endsWith("k")) {
+                            reviewCount = Math.round(parseFloat(countText) * 1000);
+                        } else {
+                            reviewCount = Number(countText.replace(/,/g, ""));
+                        }
+                    }
+                    if (reviewRating !== null && reviewCount !== null) {
+                        reviews = `${reviewRating} (${reviewCount.toLocaleString()} reviews)`;
+                    } else if (reviewRating !== null) {
+                        reviews = `${reviewRating}`;
+                    } else if (reviewCount !== null) {
+                        reviews = `${reviewCount.toLocaleString()} reviews`;
+                    }
+
+                    if (name && price && link && image) {
+                        items.push({
+                            name,
+                            price,
+                            link,
+                            image,
+                            brand,
+                            discount,
+                            reviews,
+                            reviewRating,
+                            platform: "Myntra"
+                        });
+                    }
+                });
+
+                const start = (page - 1) * limit;
+                return items.slice(start, start + limit);
+            }, limit, page);
+        } catch (error) {
+            console.error('Myntra scraping error:', error.message);
+            if (error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+                console.log('Detected HTTP2 protocol error - Myntra might be blocking the request');
+            }
+            return [];
+        }
+    }, trackBrowser, abortSignal);
 }
 
 // --- Ajio ---
-async function scrapeAjio(query, page = 1, limit = 10) {
+async function scrapeAjio(query, page = 1, limit = 10, trackBrowser, abortSignal) {
     const url = `https://www.ajio.com/search/?text=${encodeURIComponent(query)}`;
     return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
         await pageObj.waitForSelector("div.item.rilrtl-products-list__item", { timeout: 15000 }).catch(() => { });
-        for (let i = 0; i < page * 6; i++) {
-            await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
-            await new Promise(resolve => setTimeout(resolve, 600));
+        const found = await pageObj.$("div.item.rilrtl-products-list__item");
+        if (!found) {
+            console.warn("No products found");
+            return [];
         }
+        for (let i = 0; i < page * 6; i++) {
+            if (abortSignal?.aborted) {
+                console.log("Scroll aborted");
+                return [];
+            }
+            await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500)); // give time for images/data
+
         return pageObj.evaluate((limit, page) => {
             const items = [];
             document.querySelectorAll("div.item.rilrtl-products-list__item").forEach(card => {
@@ -763,16 +1049,56 @@ async function scrapeAjio(query, page = 1, limit = 10) {
             const start = (page - 1) * limit;
             return items.slice(start, start + limit);
         }, limit, page);
-    });
+    }, trackBrowser, abortSignal);
 }
 
 // --- API Route ---
 app.post("/api/search", async (req, res) => {
     const { query, platforms, page = 1, limit = 10 } = req.body;
+
     if (!query || query.trim().length === 0) {
         return res.status(400).json({ error: "Query is required" });
     }
 
+    // Abort any existing request
+    await abortCurrentRequest();
+
+    // Setup new request tracking
+    const abortController = new AbortController();
+    const activeBrowsers = [];
+    
+    currentRequest.controller = abortController;
+    currentRequest.browsers = activeBrowsers;
+
+    // Track browser helper
+    const trackBrowser = browser => {
+        activeBrowsers.push(browser);
+        currentRequest.browsers = activeBrowsers;
+    };
+
+    // Improved abort handling
+    const cleanup = async () => {
+        console.log("Cleaning up resources...");
+        abortController.abort();
+        const closePromises = activeBrowsers.map(browser =>
+            browser.close().catch(err => console.error("Failed to close browser:", err.message))
+        );
+        await Promise.all(closePromises);
+        activeBrowsers.length = 0;
+        if (currentRequest.controller === abortController) {
+            currentRequest.controller = null;
+            currentRequest.browsers = [];
+            currentRequest.cleanup = null;
+        }
+    };
+
+    currentRequest.cleanup = cleanup;
+
+    // Handle request abort
+    req.on("aborted", cleanup);
+    req.on("close", cleanup);
+
+    // Your platform functions updated to pass abortController.signal
     const selected = Array.isArray(platforms) && platforms.length > 0
         ? platforms.map(p => p.toLowerCase())
         : ["flipkart", "amazon", "meesho", "myntra", "ajio"];
@@ -789,57 +1115,91 @@ app.post("/api/search", async (req, res) => {
         return array;
     }
 
-    // Map platform to its code
+    // Map platform to its code with improved abort handling
     const platformFns = {
         flipkart: async () => {
-            const flipkartData = await retryFetch(() => scrapeFlipkart(query, page, limit), 3, 1500);
+            if (abortController.signal.aborted) return [];
+            const flipkartData = await retryFetch(() => scrapeFlipkart(query, page, limit, trackBrowser, abortController.signal), 3, 0);
+            if (abortController.signal.aborted) return [];
             const items = flipkartData.items ?? flipkartData;
             cardCounts.Flipkart = flipkartData.cardCount ?? items.length;
             console.log("Flipkart card count:", cardCounts.Flipkart);
             return items;
         },
         amazon: async () => {
-            const amazonData = await retryFetch(() => scrapeAmazon(query, page, limit), 3, 0);
+            if (abortController.signal.aborted) return [];
+            const amazonData = await retryFetch(() => scrapeAmazon(query, page, limit, trackBrowser, abortController.signal), 3, 0);
+            if (abortController.signal.aborted) return [];
             cardCounts.Amazon = amazonData.length;
             console.log("Amazon card count:", cardCounts.Amazon);
             return amazonData;
         },
         meesho: async () => {
-            const meeshoData = await retryFetch(() => scrapeMeesho(query, page, limit), 3, 0);
+            if (abortController.signal.aborted) return [];
+            const meeshoData = await retryFetch(() => scrapeMeesho(query, page, limit, trackBrowser, abortController.signal), 3, 0);
+            if (abortController.signal.aborted) return [];
             cardCounts.Meesho = meeshoData.length;
             console.log("Meesho card count:", cardCounts.Meesho);
             return meeshoData;
         },
         myntra: async () => {
-            const myntraData = await retryFetch(() => scrapeMyntra(query, page, limit), 3, 0);
+            if (abortController.signal.aborted) return [];
+            const myntraData = await retryFetch(() => scrapeMyntra(query, page, limit, trackBrowser, abortController.signal), 3, 0);
+            if (abortController.signal.aborted) return [];
             cardCounts.Myntra = myntraData.length;
             console.log("Myntra card count:", cardCounts.Myntra);
             return myntraData;
         },
         ajio: async () => {
-            const ajioData = await retryFetch(() => scrapeAjio(query, page, limit), 3, 0);
+            if (abortController.signal.aborted) return [];
+            const ajioData = await retryFetch(() => scrapeAjio(query, page, limit, trackBrowser, abortController.signal), 3, 0);
+            if (abortController.signal.aborted) return [];
             cardCounts.Ajio = ajioData.length;
             console.log("Ajio card count:", cardCounts.Ajio);
             return ajioData;
         }
     };
 
-    // Run all selected platform scrapers in parallel
-    const promises = selected.map(platform =>
-        platformFns[platform]?.().catch(err => {
-            cardCounts[platform.charAt(0).toUpperCase() + platform.slice(1)] = 0;
-            console.error(`${platform.charAt(0).toUpperCase() + platform.slice(1)} error:`, err.message);
-            return [];
-        })
-    );
+    try {
+        const promises = selected.map(platform =>
+            platformFns[platform]?.().catch(err => {
+                if (abortController.signal.aborted) return [];
+                cardCounts[platform.charAt(0).toUpperCase() + platform.slice(1)] = 0;
+                console.error(`${platform.charAt(0).toUpperCase() + platform.slice(1)} error:`, err.message);
+                return [];
+            })
+        );
 
-    const allResults = await Promise.all(promises);
-    allResults.forEach(items => results.push(...items));
+        const allResults = await Promise.all(promises);
+        if (abortController.signal.aborted) {
+            res.status(499).json({ error: "Client closed request" });
+            return;
+        }
+        allResults.forEach(items => results.push(...items));
+        shuffle(results);
 
-    // Shuffle the results if you want (or comment out to keep order)
-    shuffle(results);
+        res.status(200).json(results);
+    } catch (err) {
+        if (abortController.signal.aborted) {
+            res.status(499).json({ error: "Client closed request" });
+            return;
+        }
+        console.error("Unexpected error:", err.message);
+        res.status(500).json({ error: "Internal Server Error" });
+    } finally {
+        await cleanup();
+    }
+});
 
-    res.status(200).json(results);
+// Handle process termination
+process.on("SIGTERM", async () => {
+    await abortCurrentRequest();
+    process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+    await abortCurrentRequest();
+    process.exit(0);
 });
 
 app.listen(PORT, () => {
