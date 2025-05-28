@@ -4,7 +4,7 @@ import InfiniteScroll from "react-infinite-scroll-component";
 import NProgress from "nprogress"; // Import NProgress
 import "../styles/nprogress.css";
 import { Link } from "react-router-dom";
-import useStore from '../states/store';
+import useStore from './States/store';
 
 // Configure NProgress
 NProgress.configure({
