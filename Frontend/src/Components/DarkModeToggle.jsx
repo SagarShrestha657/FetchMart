@@ -1,5 +1,5 @@
 import React from 'react';
-import useStore from '../states/store';
+import useStore from '../States/store';
 
 const DarkModeToggle = () => {
   const { isDarkMode, toggleDarkMode } = useStore();
