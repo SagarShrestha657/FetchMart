@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import useStore from './States/store';
+import useStore from '../States/store';
 
 const WishlistPage = () => {
   const { wishlist, removeFromWishlist, clearWishlist } = useStore();
