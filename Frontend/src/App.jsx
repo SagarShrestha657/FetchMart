@@ -3,7 +3,7 @@ import HomePage from './Pages/HomePage';
 import WishlistPage from './Pages/WishlistPage';
 import NavbarComponent from './Components/NavbarComponent';
 import DarkModeToggle  from './Components/DarkModeToggle'
-import useStore from './states/store';
+import useStore from './States/store';
 import './App.css';
 import AboutPage from './Pages/AboutPage';
 import { useEffect } from 'react';
