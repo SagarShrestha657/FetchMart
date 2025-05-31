@@ -74,7 +74,7 @@ function HomePage() {
       return;
     }
     try {
-      const { data } = await axios.get('http://localhost:5001/api/suggestions', {
+      const { data } = await axios.get(`${BACKEND_URL}/sugesstions`, {
         params: { query },
       });
 
@@ -253,10 +253,6 @@ function HomePage() {
       [platform]: !searchFilters[platform],
     };
     setSearchFilters(newFilters);
-    // if (searchQuery.trim()) {
-    //   setSearchPage(1);
-    //   fetchResults(true, 1, searchQuery, true);
-    // }
   };
 
   const handleSortChange = (e) => {
