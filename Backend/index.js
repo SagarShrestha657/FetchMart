@@ -81,14 +81,19 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'User-Agent': randomUseragent.getRandom(),
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
                     'Connection': 'keep-alive',
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache',
+                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1'
+                    'Upgrade-Insecure-Requests': '1',
+                    'Referer': 'https://www.google.com/'
                 },
                 timeout: 20000,
                 signal
