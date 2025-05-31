@@ -19,8 +19,8 @@ EventEmitter.defaultMaxListeners = 50;
 puppeteer.use(StealthPlugin());
 
 // RapidAPI Configuration
-const RAPIDAPI_KEY = '8aed390357msh1f69d2669c16bd8p14b341jsnf7dd53f46116';
-const RAPIDAPI_HOST = 'real-time-meesho-api.p.rapidapi.com';
+// const RAPIDAPI_KEY = '8aed390357msh1f69d2669c16bd8p14b341jsnf7dd53f46116';
+// const RAPIDAPI_HOST = 'real-time-meesho-api.p.rapidapi.com';
 
 const app = express();
 app.use(cors({
@@ -82,8 +82,15 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                     'Connection': 'keep-alive',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1'
                 },
-                timeout: 10000,
+                timeout: 20000,
                 signal
             });
             return response.data;
@@ -101,7 +108,7 @@ const makeRequest = async (url, signal, retries = 3) => {
             }
 
             // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            await new Promise(resolve => setTimeout(resolve, attempt * 3000));
         }
     }
     throw lastError;

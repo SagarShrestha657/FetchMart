@@ -209,20 +209,21 @@ function HomePage() {
           addRecentSearch(newQuery ?? searchQuery, data, selectedPlatforms, nextPage);
         }
       } else {
-        appendSearchResults(data);
-        // Find and update the existing recent search with the same query and platforms
-        const existingSearch = recentSearches.find(search =>
-          search.term === (newQuery ?? searchQuery) &&
-          JSON.stringify(search.platforms) === JSON.stringify(selectedPlatforms)
-        );
-        if (existingSearch) {
-          // Append new results to the existing search
-          addRecentSearch(
-            newQuery ?? searchQuery,
-            [...existingSearch.results, ...data],
-            selectedPlatforms,
-            nextPage
+        if (data) {
+          appendSearchResults(data);
+          // Find and update the existing recent search with the same query and platforms
+          const existingSearch = recentSearches.find(search =>
+            search.term === (newQuery ?? searchQuery)
           );
+          if (existingSearch) {
+            // Append new results to the existing search
+            addRecentSearch(
+              newQuery ?? searchQuery,
+              [...existingSearch.results, ...data],
+              selectedPlatforms,
+              nextPage
+            );
+          }
         }
       }
       setHasMore(true);
@@ -413,7 +414,7 @@ function HomePage() {
           )}
         </div>
         <button
-          onClick={()=>{
+          onClick={() => {
             setShowRecentSearches(false)
             setShowSuggestions(false)
             handleSearch()
