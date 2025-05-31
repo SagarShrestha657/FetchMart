@@ -1,5 +1,3 @@
-import express from "express";
-import cors from "cors";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import randomUseragent from "random-useragent";
@@ -19,19 +17,8 @@ EventEmitter.defaultMaxListeners = 50;
 puppeteer.use(StealthPlugin());
 
 // RapidAPI Configuration
-const RAPIDAPI_KEY = '8aed390357msh1f69d2669c16bd8p14b341jsnf7dd53f46116';
-const RAPIDAPI_HOST = 'real-time-meesho-api.p.rapidapi.com';
-
-const app = express();
-app.use(cors({
-    origin: [
-        "http://localhost:5173",
-        "https://fetch-mart.vercel.app"
-    ]
-}));
-app.use(express.json());
-
-const PORT = process.env.PORT || 5001;
+// const RAPIDAPI_KEY = '8aed390357msh1f69d2669c16bd8p14b341jsnf7dd53f46116';
+// const RAPIDAPI_HOST = 'real-time-meesho-api.p.rapidapi.com';
 
 // Global request tracking
 let currentRequest = {
@@ -832,8 +819,8 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, trackBrowser, 
         abortSignal.addEventListener("abort", abortListener, { once: true });
 
         const page = await browser.newPage();
-        await page.setDefaultNavigationTimeout(30000);
-        await page.setDefaultTimeout(30000);
+        page.setDefaultNavigationTimeout(30000);
+        page.setDefaultTimeout(30000);
 
         if (userAgent) await page.setUserAgent(userAgent);
         await page.setViewport({ width: 1280, height: 800 });
@@ -897,7 +884,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, trackBrowser, 
 }
 
 // API Route
-app.post("/api/search", async (req, res) => {
+export const scrapper = (req, res) => {
     const { query, platforms, page = 1, limit = 10 } = req.body;
 
     if (!query || query.trim().length === 0) {
@@ -1044,51 +1031,7 @@ app.post("/api/search", async (req, res) => {
     }
 });
 
-// Amazon suggestions endpoint
-app.get('/api/suggestions', async (req, res) => {
-    try {
-        const { query } = req.query;
-        if (!query) {
-            return res.status(400).json({ error: 'Query parameter is required' });
-        }
 
-        const response = await axios.get('https://completion.amazon.in/api/2017/suggestions', {
-            params: {
-                'session-id': `257-${Date.now()}`,
-                'customer-id': '',
-                'request-id': 'YVZQZQZQZQZQ',
-                'page-type': 'Search',
-                'lop': 'en_IN',
-                'site-variant': 'desktop',
-                'client-info': 'amazon-search-ui',
-                'mid': 'A21TJRUUN4KGV',
-                'alias': 'aps',
-                'b2b': '0',
-                'fresh': '0',
-                'ks': '87',
-                'prefix': query,
-                'event': 'onKeyPress',
-                'limit': '11',
-                'fb': '1',
-                'suggestion-type': 'KEYWORD'
-            },
-            headers: {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Referer': 'https://www.amazon.in/',
-                'Origin': 'https://www.amazon.in'
-            }
-        });
-
-        res.json(response.data);
-    } catch (error) {
-        console.error('Error fetching Amazon suggestions:', error);
-        res.status(500).json({ error: 'Failed to fetch suggestions' });
-    }
-});
 
 // Handle process termination
 process.on("SIGTERM", async () => {
@@ -1099,8 +1042,4 @@ process.on("SIGTERM", async () => {
 process.on("SIGINT", async () => {
     await abortCurrentRequest();
     process.exit(0);
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
 });

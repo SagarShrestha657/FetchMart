@@ -66,25 +66,32 @@ const useStore = create(
       appendSearchResults: (newResults) => set((state) => ({
         searchResults: [...state.searchResults, ...newResults]
       })),
-      resetSearch: () => set({
-        searchQuery: '',
-        searchResults: [],
-        searchPage: 1,
-        hasMore: true
-      }),
 
       // Recent searches state
-      recentSearches: [],
-      addRecentSearch: (searchTerm) =>
+      recentSearches: [], // Will store objects with {term, platforms, results, page}
+      addRecentSearch: (searchTerm, results, platforms, page) =>
+        set((state) => {
+          // Remove any existing entry with the same search term
+          const filteredSearches = state.recentSearches.filter(item => item.term !== searchTerm);
+
+          // Add new search at the beginning
+          const newSearches = [
+            {
+              term: searchTerm,
+              platforms: Array.isArray(platforms) ? platforms : [platforms],
+              results: Array.isArray(results) ? results : [results],
+              page: page || 1,
+            },
+            ...filteredSearches
+          ].slice(0, 5); // Keep only last 5 searches
+
+          return { recentSearches: newSearches };
+        }),
+      clearRecentSearches: (term) =>
         set((state) => ({
-          recentSearches: [
-            searchTerm,
-            ...state.recentSearches.filter((term) => term !== searchTerm),
-          ].slice(0, 5), // Keep only last 5 searches
-        })),
-      clearRecentSearches: () =>
-        set(() => ({
-          recentSearches: [],
+          recentSearches: term
+            ? state.recentSearches.filter(search => search.term !== term)
+            : []
         })),
     }),
     {
@@ -97,7 +104,8 @@ const useStore = create(
         searchFilters: state.searchFilters,
         searchSort: state.searchSort,
         searchPage: state.searchPage,
-        hasMore: state.hasMore
+        hasMore: state.hasMore,
+        recentSearches: state.recentSearches
       })
     }
   )
