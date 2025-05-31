@@ -63,16 +63,44 @@ const makeRequest = async (url, signal, retries = 3) => {
                 throw new Error('Request aborted');
             }
 
+            // Add random delay between attempts
+            if (attempt > 1) {
+                const delay = Math.floor(Math.random() * 3000) + 2000; // Random delay between 2-5 seconds
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': randomUseragent.getRandom(),
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
                     'Connection': 'keep-alive',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Referer': 'https://www.google.com/search?q=' + encodeURIComponent(url.split('q=')[1]?.split('&')[0] || '')
                 },
-                timeout: 10000,
-                signal
+                timeout: 30000,
+                signal,
+                maxRedirects: 5,
+                validateStatus: function (status) {
+                    return status >= 200 && status < 500;
+                }
             });
+
+            // Check for 529 status code
+            if (response.status === 529) {
+                throw new Error('Rate limited (529)');
+            }
+
             return response.data;
         } catch (error) {
             lastError = error;
@@ -87,8 +115,10 @@ const makeRequest = async (url, signal, retries = 3) => {
                 throw error;
             }
 
-            // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            // Wait before retrying (exponential backoff with jitter)
+            const baseDelay = attempt * 2000;
+            const jitter = Math.floor(Math.random() * 1000);
+            await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
         }
     }
     throw lastError;

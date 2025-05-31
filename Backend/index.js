@@ -76,6 +76,12 @@ const makeRequest = async (url, signal, retries = 3) => {
                 throw new Error('Request aborted');
             }
 
+            // Add random delay between attempts
+            if (attempt > 1) {
+                const delay = Math.floor(Math.random() * 3000) + 2000; // Random delay between 2-5 seconds
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': randomUseragent.getRandom(),
@@ -93,11 +99,21 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
                     'Upgrade-Insecure-Requests': '1',
-                    'Referer': 'https://www.google.com/'
+                    'Referer': 'https://www.google.com/search?q=' + encodeURIComponent(url.split('q=')[1]?.split('&')[0] || '')
                 },
-                timeout: 20000,
-                signal
+                timeout: 30000,
+                signal,
+                maxRedirects: 5,
+                validateStatus: function (status) {
+                    return status >= 200 && status < 500;
+                }
             });
+
+            // Check for 529 status code
+            if (response.status === 529) {
+                throw new Error('Rate limited (529)');
+            }
+
             return response.data;
         } catch (error) {
             lastError = error;
@@ -112,8 +128,10 @@ const makeRequest = async (url, signal, retries = 3) => {
                 throw error;
             }
 
-            // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+            // Wait before retrying (exponential backoff with jitter)
+            const baseDelay = attempt * 2000;
+            const jitter = Math.floor(Math.random() * 1000);
+            await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
         }
     }
     throw lastError;
