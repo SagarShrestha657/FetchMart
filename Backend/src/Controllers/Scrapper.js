@@ -69,25 +69,45 @@ const makeRequest = async (url, signal, retries = 3) => {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
 
-            const response = await axios.get(url, {
-                headers: {
-                    'User-Agent': randomUseragent.getRandom(),
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
-                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-                    'Sec-Ch-Ua-Mobile': '?0',
-                    'Sec-Ch-Ua-Platform': '"Windows"',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Referer': 'https://www.google.com/search?q=' + encodeURIComponent(url.split('q=')[1]?.split('&')[0] || '')
-                },
+            // Generate a more realistic browser fingerprint
+            const browserVersion = Math.floor(Math.random() * 20) + 100; // Chrome version 100-120
+            const platform = ['Windows', 'Macintosh', 'Linux'][Math.floor(Math.random() * 3)];
+            const userAgent = randomUseragent.getRandom();
+
+            // Add more realistic headers
+            const headers = {
+                'User-Agent': userAgent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-Ch-Ua': `"Not A(Brand";v="99", "Google Chrome";v="${browserVersion}", "Chromium";v="${browserVersion}"`,
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': `"${platform}"`,
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': 'https://www.google.com/search?q=' + encodeURIComponent(url.split('q=')[1]?.split('&')[0] || ''),
+                'DNT': '1',
+                'Cookie': `session_id=${Math.random().toString(36).substring(7)}; visitor_id=${Math.random().toString(36).substring(7)}`,
+                'X-Requested-With': 'XMLHttpRequest'
+            };
+
+            // Add random query parameters to make requests look more natural
+            const randomParams = new URLSearchParams({
+                '_': Date.now(),
+                'r': Math.random().toString(36).substring(7),
+                'v': Math.random().toString(36).substring(7)
+            }).toString();
+
+            const finalUrl = url.includes('?') ? `${url}&${randomParams}` : `${url}?${randomParams}`;
+
+            const response = await axios.get(finalUrl, {
+                headers,
                 timeout: 30000,
                 signal,
                 maxRedirects: 5,
@@ -98,6 +118,7 @@ const makeRequest = async (url, signal, retries = 3) => {
 
             // Check for 529 status code
             if (response.status === 529) {
+                console.log('Rate limited (529) - Attempt', attempt);
                 throw new Error('Rate limited (529)');
             }
 
