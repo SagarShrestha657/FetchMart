@@ -74,7 +74,7 @@ function HomePage() {
       return;
     }
     try {
-      const { data } = await axios.get(`${BACKEND_URL}/sugesstions`, {
+      const { data } = await axios.get(`${BACKEND_URL}/suggestions`, {
         params: { query },
       });
 
