@@ -10,38 +10,37 @@ const NavbarComponent = () => {
 
   return (
     <nav className="sticky top-0 z-50 w-full bg-white/80 dark:bg-gray-900 backdrop-blur-md shadow-md border-b border-gray-300 dark:border-gray-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full mx-auto px-2 sm:px-4 lg:px-6">
         <div className="flex justify-between items-center h-16">
           <Link
             to="/"
-            className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-pink-500 dark:from-blue-400 dark:to-pink-400 font-bold text-xl hover:scale-105 transition-transform"
+            className="flex items-center gap-2 hover:scale-105 transition-transform"
           >
-            FetchMart
+            <img src="/logo.svg" alt="FetchMart Logo" className="h-10" />
           </Link>
           
           <div className="flex gap-4 items-center">
-            <button
+            {/* <button
               onClick={toggleDarkMode}
               className="p-2 rounded-md transition-colors text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-yellow-300 dark:hover:text-yellow-200 dark:hover:bg-gray-800"
               aria-label="Toggle dark mode"
             >
               {isDarkMode ? (
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
                 </svg>
               ) : (
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
                 </svg>
               )}
-            </button>
+            </button> */}
 
             <Link
               to="/"
-              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                isActive('/') 
-                  ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105' 
-                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
+              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${isActive('/')
+                ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,10 +51,9 @@ const NavbarComponent = () => {
             
             <Link
               to="/about"
-              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                isActive('/about') 
-                  ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105' 
-                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
+              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${isActive('/about')
+                ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,10 +64,9 @@ const NavbarComponent = () => {
             
             <Link
               to="/wishlist"
-              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                isActive('/wishlist') 
-                  ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105' 
-                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
+              className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${isActive('/wishlist')
+                ? 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-gray-800 scale-105'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-blue-300 dark:hover:bg-gray-800'
               }`}
             >
               <div className="relative">

@@ -1,14 +1,8 @@
 import express from 'express';
 const router = express.Router();
+import { scrapper } from '../Controllers/Scrapper';
 
-// GET route
-router.get('/', (req, res) => {
-    res.json({ message: 'Scraper route is working' });
-});
 
-// POST route
-router.post('/', (req, res) => {
-    res.json({ message: 'POST request received' });
-});
+router.post('/search', scrapper);
 
 export default router;

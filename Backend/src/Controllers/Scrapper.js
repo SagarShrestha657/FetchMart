@@ -27,6 +27,57 @@ let currentRequest = {
     cleanup: null
 };
 
+// Add free proxy configuration
+const FREE_PROXY_LIST_URL = 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt';
+
+// Helper function to fetch and validate free proxies
+const getFreeProxies = async () => {
+    try {
+        const response = await axios.get(FREE_PROXY_LIST_URL);
+        const proxies = response.data.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#'))
+            .map(line => {
+                const [host, port] = line.split(':');
+                return { host, port };
+            });
+        return proxies;
+    } catch (error) {
+        console.error('Error fetching proxy list:', error.message);
+        return [];
+    }
+};
+
+// Helper function to test proxy
+const testProxy = async (proxy) => {
+    try {
+        const response = await axios.get('https://api.ipify.org?format=json', {
+            proxy: {
+                host: proxy.host,
+                port: proxy.port,
+                protocol: 'http'
+            },
+            timeout: 5000
+        });
+        return response.data.ip;
+    } catch (error) {
+        return null;
+    }
+};
+
+// Helper function to get working proxy
+const getWorkingProxy = async () => {
+    const proxies = await getFreeProxies();
+    for (const proxy of proxies) {
+        const ip = await testProxy(proxy);
+        if (ip) {
+            console.log('Found working proxy:', proxy.host, proxy.port);
+            return proxy;
+        }
+    }
+    return null;
+};
+
 // Function to abort current request and cleanup
 async function abortCurrentRequest() {
     if (currentRequest.controller) {
@@ -69,6 +120,12 @@ const makeRequest = async (url, signal, retries = 3) => {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
 
+            // Get a working proxy
+            const proxy = await getWorkingProxy();
+            if (!proxy) {
+                console.warn('No working proxy found, proceeding without proxy');
+            }
+
             // Generate a more realistic browser fingerprint
             const browserVersion = Math.floor(Math.random() * 20) + 100; // Chrome version 100-120
             const platform = ['Windows', 'Macintosh', 'Linux'][Math.floor(Math.random() * 3)];
@@ -106,6 +163,14 @@ const makeRequest = async (url, signal, retries = 3) => {
 
             const finalUrl = url.includes('?') ? `${url}&${randomParams}` : `${url}?${randomParams}`;
 
+            // Add production-specific headers
+            if (process.env.NODE_ENV === 'production') {
+                headers['X-Forwarded-For'] = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+                headers['X-Real-IP'] = headers['X-Forwarded-For'];
+                headers['CF-Connecting-IP'] = headers['X-Forwarded-For'];
+                headers['True-Client-IP'] = headers['X-Forwarded-For'];
+            }
+
             const response = await axios.get(finalUrl, {
                 headers,
                 timeout: 30000,
@@ -113,7 +178,14 @@ const makeRequest = async (url, signal, retries = 3) => {
                 maxRedirects: 5,
                 validateStatus: function (status) {
                     return status >= 200 && status < 500;
-                }
+                },
+                ...(proxy && {
+                    proxy: {
+                        host: proxy.host,
+                        port: proxy.port,
+                        protocol: 'http'
+                    }
+                })
             });
 
             // Check for 529 status code
@@ -1081,8 +1153,6 @@ export const scrapper = (req, res) => {
         await cleanup();
     }
 });
-
-
 
 // Handle process termination
 process.on("SIGTERM", async () => {

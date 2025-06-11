@@ -101,7 +101,7 @@ function AboutPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4">
             <a
-              href="mailto:support@fetchmart.com"
+              href="mailto:shresthasagar657@gmail.com"
               className="flex items-center justify-center gap-2 bg-blue-500 text-white px-6 py-3 rounded-full hover:bg-blue-600 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +110,7 @@ function AboutPage() {
               Email Us
             </a>
             <a
-              href="https://instagram.com/fetchmart"
+              href="https://instagram.com/_sagar__shrestha_"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 bg-pink-500 text-white px-6 py-3 rounded-full hover:bg-pink-600 transition-colors"

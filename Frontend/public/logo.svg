@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="50" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Modern FM monogram -->
+  <path d="M15 10H35V15H20V20H33V25H20V35H15V10Z" fill="url(#gradient)"/>
+  <path d="M40 35V10H45L55 25L65 10H70V35H65V20L55 35L45 20V35H40Z" fill="url(#gradient)"/>
+  
+  <!-- Separator with style -->
+  <path d="M75 10L80 25L75 40" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M75 10L85 25L75 40" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+  
+  <!-- Text with custom styling -->
+  <g fill="url(#gradient)">
+    <text x="90" y="32" font-family="'Poppins', 'Segoe UI', sans-serif" font-size="24" font-weight="600">
+      FetchMart
+    </text>
+    <!-- Decorative underline -->
+    <path d="M90 35H170" stroke="url(#gradient)" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0" y1="0" x2="200" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="0.5" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+</svg> 

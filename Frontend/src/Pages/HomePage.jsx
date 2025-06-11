@@ -5,6 +5,7 @@ import NProgress from "nprogress"; // Import NProgress
 import "../styles/nprogress.css";
 import { Link } from "react-router-dom";
 import useStore from '../States/store';
+import toast from 'react-hot-toast';
 
 // Configure NProgress
 NProgress.configure({
@@ -93,28 +94,35 @@ function HomePage() {
   const handleInputChange = (e) => {
     const value = e.target.value;
     setSearchQuery(value);
-    if (value.trim()) {
+    if (value.trim().length > 0) {
       getSuggestions(value);
       setShowSuggestions(true);
     } else {
       setSuggestions([]);
       setShowSuggestions(false);
+      setShowRecentSearches(true);
     }
   };
 
   const handleSearch = (searchValue = null) => {
     const queryToSearch = searchValue || searchQuery;
-    if (queryToSearch.trim().length < 1) return;
+    if (queryToSearch.trim().length < 1) return toast.error("Please enter a search term!");
+
+    const selectedPlatforms = Object.keys(searchFilters).filter((p) => searchFilters[p]);
+    if (selectedPlatforms.length === 0) {
+      toast.error("Please select at least one platform!");
+      return;
+    }
 
     // Check if we have a matching recent search
     const matchingSearch = recentSearches.find(search =>
-      search.term === queryToSearch
+      search.term === queryToSearch &&
+      JSON.stringify(search.platforms) === JSON.stringify(selectedPlatforms),
     );
 
     if (matchingSearch) {
       // If we have a match, use the cached results and move to top
       setSearchResults(matchingSearch.results);
-      setSearching(false);
       setSearchPage(matchingSearch.page);
       setHasMore(true);
 
@@ -130,7 +138,6 @@ function HomePage() {
       addRecentSearch(queryToSearch, matchingSearch.results, matchingSearch.platforms, matchingSearch.page);
     } else {
       // If no match, perform new search
-      setSearching(true);
       setSearchPage(1);
       setHasMore(true);
       setShowRecentSearches(false);
@@ -139,6 +146,7 @@ function HomePage() {
   };
 
   const handleRecentSearchClick = async (query) => {
+
     // Check if we have a matching recent search
     const matchingSearch = recentSearches.find(search =>
       search.term === query //&& 
@@ -149,7 +157,6 @@ function HomePage() {
       // If we have a match, use the cached results
       setSearchQuery(query);
       setSearchResults(matchingSearch.results);
-      setSearching(false);
       setSearchPage(matchingSearch.page);
       setHasMore(true);
 
@@ -166,7 +173,6 @@ function HomePage() {
     } else {
       // If no match, perform new search
       setSearchQuery(query);
-      setSearching(true);
       setSearchPage(1);
       setHasMore(true);
       setShowRecentSearches(false);
@@ -176,10 +182,15 @@ function HomePage() {
   };
 
   const fetchResults = async (reset = false, nextPage = 1, newQuery = null, isSearch = false) => {
-    if (!(newQuery ?? searchQuery).trim()) return;
+    if (!(newQuery ?? searchQuery).trim()) {
+      toast.error("Please enter a search term!");
+      return;
+    }
 
+    const selectedPlatforms = Object.keys(searchFilters).filter((p) => searchFilters[p]);
+
+    if (isSearch) setSearching(true)
     const currentRequestId = ++requestIdRef.current;
-
     setLoading(true);
     if (isSearch) setSearching(true);
     NProgress.start();
@@ -190,27 +201,28 @@ function HomePage() {
     cancelSource.current = new AbortController();
 
     try {
-      const selectedPlatforms = Object.keys(searchFilters).filter((p) => searchFilters[p]);
-      const { data } = await axios.post(
+      const response = await axios.post(
         `${BACKEND_URL}/search`,
         {
           query: newQuery ?? searchQuery,
           platforms: selectedPlatforms,
           page: nextPage,
-          limit: 10,
         },
-        { signal: cancelSource.current.signal }
+        {
+          signal: cancelSource.current.signal,
+        }
       );
 
-      if (reset) {
-        setSearchResults(data);
-        if (isSearch && data) {
-          // Store the search results with current platforms and page number
-          addRecentSearch(newQuery ?? searchQuery, data, selectedPlatforms, nextPage);
-        }
-      } else {
-        if (data) {
-          appendSearchResults(data);
+      // Check if response has data
+      if (response.data.length > 1) {
+        if (reset) {
+          if (isSearch) {
+            setSearchResults(response.data);
+            // Store the search results with current platforms and page number
+            addRecentSearch(newQuery ?? searchQuery, response.data, selectedPlatforms, nextPage);
+          }
+        } else {
+          appendSearchResults(response.data);
           // Find and update the existing recent search with the same query and platforms
           const existingSearch = recentSearches.find(search =>
             search.term === (newQuery ?? searchQuery)
@@ -219,19 +231,33 @@ function HomePage() {
             // Append new results to the existing search
             addRecentSearch(
               newQuery ?? searchQuery,
-              [...existingSearch.results, ...data],
+              [...existingSearch.results, ...response.data],
               selectedPlatforms,
               nextPage
             );
           }
         }
+        setHasMore(true);
       }
-      setHasMore(true);
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error("previous req block by user:", err);
+      console.log('Error details:', {
+        name: err.name,
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data
+      });
+
+      // Handle abort cases
+      if (err.name === 'AbortError' || err.message === 'canceled') {
+        console.log('Search was aborted by user');
+        toast.error('Previous search was aborted. Starting new search...');
+        return;
       }
-      if (data.response.message) console.log(data.response.message)
+
+      // Handle other errors
+      if (err.response?.data?.message) {
+        toast.error(err.response.data.message);
+      }
     } finally {
       if (requestIdRef.current === currentRequestId) {
         setLoading(false);
@@ -296,7 +322,6 @@ function HomePage() {
             placeholder="Search a product..."
             className="w-full py-3 px-5 pl-6 pr-12 text-base text-gray-900 dark:text-gray-100 sm:text-lg border-2 border-blue-200 dark:border-blue-700 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all group-hover:border-blue-300 dark:group-hover:border-blue-600 bg-white dark:bg-gray-800"
             value={searchQuery}
-            required
             onChange={handleInputChange}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
