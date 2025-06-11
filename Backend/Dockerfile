@@ -40,13 +40,13 @@ COPY . .
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # Add memory optimization flags
 ENV NODE_OPTIONS="--max-old-space-size=384"
-ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROME_BIN=/usr/bin/chromium-browser
 
 # Expose the port your app runs on
-EXPOSE 3000
+EXPOSE 5001
 
 # Start the application
 CMD ["npm", "start"] 

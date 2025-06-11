@@ -175,40 +175,6 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
     throw lastError;
 }
 
-async function retryFetch(fn, maxTries = 3, delayMs = 0) {
-    let lastResult, lastError;
-    for (let i = 0; i < maxTries; i++) {
-        try {
-            lastResult = await fn();
-            if (lastResult === null) {
-                throw new Error("Scraping returned null");
-            }
-            if (
-                (lastResult && Array.isArray(lastResult) && lastResult.length > 0) ||
-                (lastResult && lastResult.items && lastResult.items.length > 0)
-            ) {
-                return lastResult;
-            }
-        } catch (err) {
-            if (err.name === "AbortError" || err.message.includes("aborted")) {
-                console.log("Aborted during retry, no further retries.");
-                throw err;
-            }
-            if (err.message.includes("Execution context was destroyed")) {
-                console.log("Context destroyed, retrying...");
-                lastError = err;
-                continue;
-            }
-            lastError = err;
-        }
-        if (i < maxTries - 1 && delayMs > 0) {
-            await new Promise(res => setTimeout(res, delayMs));
-        }
-    }
-    if (lastError) throw lastError;
-    return lastResult;
-}
-
 // Scraper Helper
 async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
@@ -223,8 +189,17 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--window-size=1920x1080'
+                '--window-size=1920x1080',
+                '--disable-extensions',
+                '--disable-software-rasterizer',
+                '--disable-features=site-per-process',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-site-isolation-trials'
             ],
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+            ignoreHTTPSErrors: true,
+            timeout: 30000
         };
 
         browser = await puppeteer.launch(launchOptions);
