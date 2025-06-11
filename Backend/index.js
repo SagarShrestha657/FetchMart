@@ -190,12 +190,6 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
                 '--window-size=1920x1080',
-                '--disable-extensions',
-                '--disable-software-rasterizer',
-                '--disable-features=site-per-process',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--disable-site-isolation-trials'
             ],
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
             ignoreHTTPSErrors: true,
