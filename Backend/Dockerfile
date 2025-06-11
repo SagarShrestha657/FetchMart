@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
-    chromium \
+    chromium-browser \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
