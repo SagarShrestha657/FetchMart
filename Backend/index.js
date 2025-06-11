@@ -197,7 +197,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-features=IsolateOrigins,site-per-process',
                 '--disable-site-isolation-trials'
             ],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
             ignoreHTTPSErrors: true,
             timeout: 30000
         };

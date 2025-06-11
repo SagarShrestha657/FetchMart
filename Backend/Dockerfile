@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
-    chromium-browser \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
@@ -40,10 +40,10 @@ COPY . .
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Add memory optimization flags
 ENV NODE_OPTIONS="--max-old-space-size=384"
-ENV CHROME_BIN=/usr/bin/chromium-browser
+ENV CHROME_BIN=/usr/bin/chromium
 
 # Expose the port your app runs on
 EXPOSE 5001
