@@ -4,7 +4,6 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import randomUseragent from "random-useragent";
 import { EventEmitter } from 'events';
-import { chromium } from 'playwright-core';
 import dotenv from 'dotenv';
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
@@ -83,19 +82,7 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'User-Agent': randomUseragent.getRandom(),
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
-                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-                    'Sec-Ch-Ua-Mobile': '?0',
-                    'Sec-Ch-Ua-Platform': '"Windows"',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Referer': 'https://www.google.com/search?q=' + encodeURIComponent(url.split('q=')[1]?.split('&')[0] || '')
+                    'Connection': 'keep-alive'
                 },
                 timeout: 10000,
                 signal,
@@ -191,9 +178,15 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-gpu',
                 '--window-size=1920x1080',
             ],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+            executablePath: process.env.NODE_ENV === "production"
+                ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
+                : process.platform === 'win32'
+                    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+                    : process.platform === 'darwin'
+                        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                        : '/usr/bin/google-chrome',
             ignoreHTTPSErrors: true,
-            timeout: 30000
+            timeout: 45000
         };
 
         browser = await puppeteer.launch(launchOptions);
@@ -208,7 +201,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         // Set longer timeout for page load
         await page.goto(url, {
             waitUntil: "networkidle2",
-            timeout: 30000  // Increased timeout to 30 seconds
+            timeout: 45000  // Increased timeout to 30 seconds
         });
 
         // Add a small delay to ensure dynamic content loads
@@ -218,8 +211,9 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         const html = await page.content();
         console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
 
-        if (html.length < 1000) {
-            throw new Error('Page content too small, likely failed to load properly');
+        // Check if page length is below threshold
+        if (html.length < 5000) {
+            return null;
         }
 
         const products = await pageEvaluateFunc(page);
@@ -441,14 +435,11 @@ async function scrapeAmazon(query, page = 1, signal) {
 async function scrapeMeesho(query, page = 1, signal) {
     return retryOperation(async () => {
         try {
-            console.log('Meesho: Starting scraping attempt...');
             const url = `https://www.meesho.com/search?q=${encodeURIComponent(query)}&page=${page}`;
-            console.log('Meesho: URL:', url);
-            
+
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
-                console.log('Meesho: Waiting for product cards selector...');
                 const found = await pageObj.waitForSelector("a[href*='/p/'], div.sc-dkrFOg", { timeout: 15000 }).catch(() => {
                     console.log('Meesho: Product cards selector not found!');
                     return null;
@@ -461,18 +452,13 @@ async function scrapeMeesho(query, page = 1, signal) {
                 }
 
                 // Scroll to load more products
-                console.log('Meesho: Starting to scroll for more products...');
-                for (let i = 0; i < page * 6; i++) {
+                for (let i = 0; i < page * 2; i++) {
                     if (signal?.aborted) throw new Error('Request aborted');
                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
                     await new Promise(resolve => setTimeout(resolve, 300));
-                    if (i % 2 === 0) {
-                        console.log(`Meesho: Scrolled ${i + 1} times`);
-                    }
                 }
-                console.log('Meesho: Finished scrolling');
 
-                return pageObj.evaluate((page) => {
+                return pageObj.evaluate(() => {
                     const items = [];
                     const seenProducts = new Set(); // Track unique product names
 
@@ -557,22 +543,15 @@ async function scrapeMeesho(query, page = 1, signal) {
                                     reviewRating,
                                     platform: "Meesho"
                                 });
-                                console.log(`Meesho: Card ${index} - Successfully added to results`);
-                            } else {
-                                console.log(`Meesho: Card ${index} - Missing required fields:`, {
-                                    name: !!name,
-                                    price: !!price,
-                                    image: !!image
-                                });
+
                             }
+
                         } catch (error) {
                             console.error(`Meesho: Error processing card ${index}:`, error.message);
                         }
                     });
-
-                    console.log(`Meesho: Total unique items found: ${items.length}`);
                     return items;
-                }, page);
+                },);
             });
         } catch (error) {
             if (error.message === 'Request aborted') {
@@ -586,129 +565,129 @@ async function scrapeMeesho(query, page = 1, signal) {
 }
 
 // Scrape Myntra
-async function scrapeMyntra(query, page = 1, signal) {
-    return retryOperation(async () => {
-        try {
-            const url = `https://www.myntra.com/${encodeURIComponent(query.trim().toLowerCase())}?rawQuery=${encodeURIComponent(query)}&p=${page}`;
-            return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
-                if (signal?.aborted) throw new Error('Request aborted');
+// async function scrapeMyntra(query, page = 1, signal) {
+//     return retryOperation(async () => {
+//         try {
+//             const url = `https://www.myntra.com/${encodeURIComponent(query.trim().toLowerCase())}?rawQuery=${encodeURIComponent(query)}&p=${page}`;
+//             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
+//                 if (signal?.aborted) throw new Error('Request aborted');
 
-                console.log('Myntra: Waiting for product cards selector...');
-                const found = await pageObj.waitForSelector('li.product-base, div.product-base', { timeout: 15000 }).catch(() => {
-                    console.log('Myntra: Product cards selector not found!');
-                    return null;
-                });
-                console.log('Myntra: Product cards selector found:', !!found);
+//                 console.log('Myntra: Waiting for product cards selector...');
+//                 const found = await pageObj.waitForSelector('li.product-base, div.product-base', { timeout: 15000 }).catch(() => {
+//                     console.log('Myntra: Product cards selector not found!');
+//                     return null;
+//                 });
+//                 console.log('Myntra: Product cards selector found:', !!found);
 
-                if (!found) {
-                    console.log('Myntra: No products found');
-                    return [];
-                }
+//                 if (!found) {
+//                     console.log('Myntra: No products found');
+//                     return [];
+//                 }
 
-                // Scroll to load more products
-                for (let i = 0; i < page * 6; i++) {
-                    if (signal?.aborted) throw new Error('Request aborted');
-                    await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
-                    await new Promise(resolve => setTimeout(resolve, 600));
-                }
+//                 // Scroll to load more products
+//                 for (let i = 0; i < page * 1; i++) {
+//                     if (signal?.aborted) throw new Error('Request aborted');
+//                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
+//                     await new Promise(resolve => setTimeout(resolve, 600));
+//                 }
 
-                return pageObj.evaluate((page) => {
-                    const items = [];
-                    const seenProducts = new Set(); // Track unique product names
+//                 return pageObj.evaluate((page) => {
+//                     const items = [];
+//                     const seenProducts = new Set(); // Track unique product names
 
-                    const cards = document.querySelectorAll('li.product-base, div.product-base');
-                    console.log('Myntra: Number of product cards found:', cards.length);
+//                     const cards = document.querySelectorAll('li.product-base, div.product-base');
+//                     console.log('Myntra: Number of product cards found:', cards.length);
 
-                    cards.forEach((card, index) => {
-                        try {
-                            // Name
-                            const nameEl = card.querySelector('h4.product-product, div.product-product');
-                            console.log(`Myntra: Card ${index} - Name element found:`, !!nameEl);
-                            const name = nameEl?.textContent.trim() || "";
+//                     cards.forEach((card, index) => {
+//                         try {
+//                             // Name
+//                             const nameEl = card.querySelector('h4.product-product, div.product-product');
+//                             console.log(`Myntra: Card ${index} - Name element found:`, !!nameEl);
+//                             const name = nameEl?.textContent.trim() || "";
 
-                            // Skip if product name is empty or already seen
-                            if (!name || seenProducts.has(name)) {
-                                console.log('Myntra: Skipping duplicate product:', name);
-                                return;
-                            }
-                            seenProducts.add(name); // Add to seen products
+//                             // Skip if product name is empty or already seen
+//                             if (!name || seenProducts.has(name)) {
+//                                 console.log('Myntra: Skipping duplicate product:', name);
+//                                 return;
+//                             }
+//                             seenProducts.add(name); // Add to seen products
 
-                            // Brand
-                            const brandEl = card.querySelector('h3.product-brand, div.product-brand');
-                            console.log(`Myntra: Card ${index} - Brand element found:`, !!brandEl);
-                            const brand = brandEl?.textContent.trim() || "";
+//                             // Brand
+//                             const brandEl = card.querySelector('h3.product-brand, div.product-brand');
+//                             console.log(`Myntra: Card ${index} - Brand element found:`, !!brandEl);
+//                             const brand = brandEl?.textContent.trim() || "";
 
-                            // Price
-                            const priceEl = card.querySelector('div.product-price span, span.product-price');
-                            console.log(`Myntra: Card ${index} - Price element found:`, !!priceEl);
-                            const priceText = priceEl?.textContent || "";
-                            const price = Number(priceText.replace(/[^\d]/g, ''));
+//                             // Price
+//                             const priceEl = card.querySelector('div.product-price span, span.product-price');
+//                             console.log(`Myntra: Card ${index} - Price element found:`, !!priceEl);
+//                             const priceText = priceEl?.textContent || "";
+//                             const price = Number(priceText.replace(/[^\d]/g, ''));
 
-                            // Link
-                            const linkEl = card.querySelector('a[data-refreshpage="true"], a[href*="/buy/"]');
-                            console.log(`Myntra: Card ${index} - Link element found:`, !!linkEl);
-                            const link = linkEl ? (linkEl.href.startsWith('http') ? linkEl.href : `https://www.myntra.com${linkEl.getAttribute('href')}`) : "";
+//                             // Link
+//                             const linkEl = card.querySelector('a[data-refreshpage="true"], a[href*="/buy/"]');
+//                             console.log(`Myntra: Card ${index} - Link element found:`, !!linkEl);
+//                             const link = linkEl ? (linkEl.href.startsWith('http') ? linkEl.href : `https://www.myntra.com${linkEl.getAttribute('href')}`) : "";
 
-                            // Image
-                            const imgEl = card.querySelector('picture.img-responsive img, img.img-responsive');
-                            console.log(`Myntra: Card ${index} - Image element found:`, !!imgEl);
-                            const image = imgEl?.src || "";
+//                             // Image
+//                             const imgEl = card.querySelector('picture.img-responsive img, img.img-responsive');
+//                             console.log(`Myntra: Card ${index} - Image element found:`, !!imgEl);
+//                             const image = imgEl?.src || "";
 
-                            // Discount
-                            const discountEl = card.querySelector('div.product-price span.product-discountedPrice, span.product-discountPercentage');
-                            console.log(`Myntra: Card ${index} - Discount element found:`, !!discountEl);
-                            const discount = discountEl?.textContent.trim() || "";
+//                             // Discount
+//                             const discountEl = card.querySelector('div.product-price span.product-discountedPrice, span.product-discountPercentage');
+//                             console.log(`Myntra: Card ${index} - Discount element found:`, !!discountEl);
+//                             const discount = discountEl?.textContent.trim() || "";
 
-                            // Rating
-                            const ratingEl = card.querySelector('div.product-ratingsContainer span, span.product-ratingsContainer');
-                            console.log(`Myntra: Card ${index} - Rating element found:`, !!ratingEl);
-                            const rating = ratingEl?.textContent.trim() || "";
-                            const reviewRating = rating ? Number(rating) : null;
+//                             // Rating
+//                             const ratingEl = card.querySelector('div.product-ratingsContainer span, span.product-ratingsContainer');
+//                             console.log(`Myntra: Card ${index} - Rating element found:`, !!ratingEl);
+//                             const rating = ratingEl?.textContent.trim() || "";
+//                             const reviewRating = rating ? Number(rating) : null;
 
-                            // Reviews
-                            const reviewsEl = card.querySelector('div.product-ratingsCount, span.product-ratingsCount');
-                            console.log(`Myntra: Card ${index} - Reviews element found:`, !!reviewsEl);
-                            const reviews = reviewsEl?.textContent.trim() || "";
+//                             // Reviews
+//                             const reviewsEl = card.querySelector('div.product-ratingsCount, span.product-ratingsCount');
+//                             console.log(`Myntra: Card ${index} - Reviews element found:`, !!reviewsEl);
+//                             const reviews = reviewsEl?.textContent.trim() || "";
 
-                            if (name && price && image) {
-                                items.push({
-                                    name,
-                                    price,
-                                    link,
-                                    image,
-                                    brand,
-                                    discount,
-                                    reviews,
-                                    reviewRating,
-                                    platform: 'Myntra'
-                                });
-                                console.log(`Myntra: Card ${index} - Successfully added to results`);
-                            } else {
-                                console.log(`Myntra: Card ${index} - Missing required fields:`, {
-                                    name: !!name,
-                                    price: !!price,
-                                    image: !!image
-                                });
-                            }
-                        } catch (error) {
-                            console.error(`Myntra: Error processing card ${index}:`, error.message);
-                        }
-                    });
+//                             if (name && price && image) {
+//                                 items.push({
+//                                     name,
+//                                     price,
+//                                     link,
+//                                     image,
+//                                     brand,
+//                                     discount,
+//                                     reviews,
+//                                     reviewRating,
+//                                     platform: 'Myntra'
+//                                 });
+//                                 console.log(`Myntra: Card ${index} - Successfully added to results`);
+//                             } else {
+//                                 console.log(`Myntra: Card ${index} - Missing required fields:`, {
+//                                     name: !!name,
+//                                     price: !!price,
+//                                     image: !!image
+//                                 });
+//                             }
+//                         } catch (error) {
+//                             console.error(`Myntra: Error processing card ${index}:`, error.message);
+//                         }
+//                     });
 
-                    console.log(`Myntra: Total unique items found: ${items.length}`);
-                    return items;
-                }, page);
-            });
-        } catch (error) {
-            if (error.message === 'Request aborted') {
-                console.log('Myntra scraping aborted');
-                return [];
-            }
-            console.error('Myntra scraping error:', error.message);
-            throw error;
-        }
-    }, 3, signal, 'Myntra');
-}
+//                     console.log(`Myntra: Total unique items found: ${items.length}`);
+//                     return items;
+//                 }, page);
+//             });
+//         } catch (error) {
+//             if (error.message === 'Request aborted') {
+//                 console.log('Myntra scraping aborted');
+//                 return [];
+//             }
+//             console.error('Myntra scraping error:', error.message);
+//             throw error;
+//         }
+//     }, 3, signal, 'Myntra');
+// }
 
 // Scrape Ajio
 async function scrapeAjio(query, page = 1, signal) {
@@ -718,143 +697,174 @@ async function scrapeAjio(query, page = 1, signal) {
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
-                const found = await pageObj.waitForSelector("div.item.rilrtl-products-list__item" || "item rilrtl-products-list__item item", { timeout: 15000 }).catch(() => {
+                const found = await pageObj.waitForSelector("div.item.rilrtl-products-list__item, div.item.rilrtl-products-list__item.item, div[role='row'], div.rilrtl-products-list__item", { timeout: 15000 }).catch(() => {
                     console.log('Ajio: Product cards selector not found!');
                     return null;
                 });
                 console.log('Ajio: Product cards selector found:', !!found);
 
                 // Scroll to load more products
-                for (let i = 0; i < page * 6; i++) {
+                for (let i = 0; i < page * 1; i++) {
                     if (signal?.aborted) throw new Error('Request aborted');
                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
-                    await new Promise(resolve => setTimeout(resolve, 600));
+                    await new Promise(resolve => setTimeout(resolve, 300));
                 }
 
-                return pageObj.evaluate((page) => {
+                return pageObj.evaluate(() => {
                     const items = [];
                     const seenProducts = new Set(); // Track unique product names
 
-                    document.querySelectorAll("div.item.rilrtl-products-list__item" || "item rilrtl-products-list__item item").forEach(card => {
-                        // Name - try both old and new selectors
-                        const nameEl = card.querySelector("div.nameCls") ||
-                            card.querySelector("div.name-center") ||
-                            card.querySelector("div.name");
-                        console.log('Ajio: Product name element found:', !!nameEl);
-                        let name = "";
-                        if (nameEl) {
-                            // Try aria-label first, then fallback to innerText
-                            name = nameEl.getAttribute('aria-label') || nameEl.innerText.trim();
-                        }
+                    const cards = document.querySelectorAll("div.item.rilrtl-products-list__item, div.item.rilrtl-products-list__item.item, div[role='row'], div.rilrtl-products-list__item");
+                    console.log('Ajio: Number of cards found:', cards.length);
 
-                        // Skip if product name is empty or already seen
-                        if (!name || seenProducts.has(name)) {
-                            console.log('Ajio: Skipping duplicate product:', name);
-                            return;
-                        }
-                        seenProducts.add(name); // Add to seen products
+                    cards.forEach(card => {
+                        try {
+                            // Name - try all possible selectors
+                            const nameEl = card.querySelector("div.nameCls") ||
+                                card.querySelector("div.name-center") ||
+                                card.querySelector("div.name") ||
+                                card.querySelector("[aria-label*='Product image of']") ||
+                                card.querySelector("div[aria-label]");
+                            console.log('Ajio: Product name element found:', !!nameEl);
+                            let name = "";
+                            if (nameEl) {
+                                // Try aria-label first, then fallback to innerText
+                                name = nameEl.getAttribute('aria-label') || nameEl.innerText.trim();
+                                // Clean up name if it contains "Product image of"
+                                if (name.includes("Product image of")) {
+                                    name = name.replace("Product image of", "").trim();
+                                }
+                            }
 
-                        // Brand - try both old and new selectors
-                        const brandEl = card.querySelector("div.brand strong");
-                        console.log('Ajio: Brand element found:', !!brandEl);
-                        const brand = brandEl?.textContent.trim() || "";
+                            // Skip if product name is empty or already seen
+                            if (!name || seenProducts.has(name)) {
+                                console.log('Ajio: Skipping duplicate product:', name);
+                                return;
+                            }
+                            seenProducts.add(name); // Add to seen products
 
-                        // Price - try multiple selectors
-                        let price = null;
-                        const priceEl = card.querySelector("span.price strong") ||
-                            card.querySelector("span.price #price-value") ||
-                            card.querySelector("span.price");
-                        console.log('Ajio: Price element found:', !!priceEl);
-                        if (priceEl) {
-                            if (priceEl.id === "price-value") {
-                                price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
-                        } else {
-                                const priceValue = priceEl.querySelector("#price-value");
-                                if (priceValue) {
-                                    price = Number(priceValue.textContent.replace(/[₹,]/g, ""));
+                            // Brand - try all possible selectors
+                            const brandEl = card.querySelector("div.brand strong") ||
+                                card.querySelector("div.brand") ||
+                                card.querySelector("[aria-label*='brand']");
+                            console.log('Ajio: Brand element found:', !!brandEl);
+                            const brand = brandEl?.textContent.trim() || "";
+
+                            // Price - try all possible selectors
+                            let price = null;
+                            const priceEl = card.querySelector("span.price strong") ||
+                                card.querySelector("span.price #price-value") ||
+                                card.querySelector("span.price") ||
+                                card.querySelector("[aria-label*='price']");
+                            if (priceEl) {
+                                if (priceEl.id === "price-value") {
+                                    price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
                                 } else {
-                                    const ariaLabel = priceEl.getAttribute("aria-label");
-                                    if (ariaLabel) {
-                                        price = Number(ariaLabel.replace(/[₹,]/g, ""));
+                                    const priceValue = priceEl.querySelector("#price-value");
+                                    if (priceValue) {
+                                        price = Number(priceValue.textContent.replace(/[₹,]/g, ""));
                                     } else {
-                                        price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
+                                        const ariaLabel = priceEl.getAttribute("aria-label");
+                                        if (ariaLabel) {
+                                            price = Number(ariaLabel.replace(/[₹,]/g, ""));
+                                        } else {
+                                            price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // Link - try both old and new selectors
-                        const linkEl = card.querySelector("a.rilrtl-products-list__link.desktop") ||
-                            card.querySelector("a.rilrtl-products-list__link");
-                        const link = linkEl ? (linkEl.href.startsWith("http") ? linkEl.href : "https://www.ajio.com" + linkEl.getAttribute("href")) : "";
+                            // Link - try all possible selectors
+                            const linkEl = card.querySelector("a.rilrtl-products-list__link.desktop") ||
+                                card.querySelector("a.rilrtl-products-list__link") ||
+                                card.querySelector("a[href*='/p/']");
+                            const link = linkEl ? (linkEl.href.startsWith("http") ? linkEl.href : "https://www.ajio.com" + linkEl.getAttribute("href")) : "";
 
-                        // Image - try both old and new selectors
-                        const imgEl = card.querySelector("img.rilrtl-lazy-img");
-                        console.log('Ajio: Image element found:', !!imgEl);
-                        const image = imgEl ? (imgEl.src.startsWith("http") ? imgEl.src : "https:" + imgEl.src) : "";
+                            // Image - try all possible selectors
+                            const imgEl = card.querySelector("img.rilrtl-lazy-img") ||
+                                card.querySelector("img.rilrtl-lazy-img.rilrtl-lazy-img-loaded");
 
-                        // Rating - try both old and new selectors
-                        let reviewRating = null;
-                        const ratingEl = card.querySelector("p._3I65V[aria-label]") ||
-                            card.querySelector("p._3I65V");
-                        if (ratingEl) {
-                            reviewRating = parseFloat(ratingEl.getAttribute("aria-label") || ratingEl.innerText.trim());
-                        }
-
-                        // Review count - try both old and new selectors
-                        let reviews = "";
-                        const reviewCountEl = card.querySelector("p[aria-label^='|']") ||
-                            card.querySelector("p[aria-label]:not(._3I65V)");
-                        if (reviewCountEl) {
-                            const countText = reviewCountEl.getAttribute("aria-label") || reviewCountEl.innerText;
-                            const match = countText.match(/\d+/);
-                            if (match) {
-                                const reviewCount = Number(match[0]);
-                                reviews = reviewRating !== null
-                                    ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                                    : `${reviewCount.toLocaleString()} reviews`;
-                            }
-                        } else if (reviewRating !== null) {
-                            reviews = `${reviewRating}`;
-                        }
-
-                        // Discount - try both old and new selectors
-                        let discount = "";
-                        // Try old discount selector
-                        const discountEl = card.querySelector("span.discount");
-                        if (discountEl) {
-                            discount = discountEl.innerText.replace(/[()]/g, "").trim();
-                        } else {
-                            // Try new BBS Price discount calculation
-                            const bbsPriceEl = card.querySelector("div._305pl span span");
-                            if (bbsPriceEl) {
-                                const bbsPrice = Number(bbsPriceEl.textContent.replace(/[₹,]/g, ""));
-                                if (price && bbsPrice < price) {
-                                    const discountPercent = Math.round(((price - bbsPrice) / price) * 100);
-                                    discount = `[${discountPercent}% off]`;
+                            let image = "";
+                            if (imgEl) {
+                                image = imgEl.src;
+                                // If src doesn't start with http, add https:
+                                if (image && !image.startsWith('http')) {
+                                    image = 'https:' + image;
                                 }
                             }
-                        }
+                            // If no image found, use a default image
+                            if (!image) {
+                                image = "https://assets.ajio.com/static/img/plp.png";
+                            }
 
-                        if (name && price && image) {
-                            items.push({
-                                name,
-                                price,
-                                link,
-                                image,
-                                brand,
-                                discount,
-                                reviews,
-                                reviewRating,
-                                platform: "Ajio"
-                            });
-                            console.log('Ajio: Added unique product:', name);
+                            // Rating - try all possible selectors
+                            let reviewRating = null;
+                            const ratingEl = card.querySelector("p._3I65V[aria-label]") ||
+                                card.querySelector("p._3I65V") ||
+                                card.querySelector("[aria-label*='out of 5']");
+                            if (ratingEl) {
+                                reviewRating = parseFloat(ratingEl.getAttribute("aria-label") || ratingEl.innerText.trim());
+                            }
+
+                            // Review count - try all possible selectors
+                            let reviews = "";
+                            const reviewCountEl = card.querySelector("p[aria-label^='|']") ||
+                                card.querySelector("p[aria-label]:not(._3I65V)") ||
+                                card.querySelector("[aria-label*='reviews']");
+                            if (reviewCountEl) {
+                                const countText = reviewCountEl.getAttribute("aria-label") || reviewCountEl.innerText;
+                                const match = countText.match(/\d+/);
+                                if (match) {
+                                    const reviewCount = Number(match[0]);
+                                    reviews = reviewRating !== null
+                                        ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
+                                        : `${reviewCount.toLocaleString()} reviews`;
+                                }
+                            } else if (reviewRating !== null) {
+                                reviews = `${reviewRating}`;
+                            }
+
+                            // Discount - try all possible selectors
+                            let discount = "";
+                            const discountEl = card.querySelector("span.discount") ||
+                                card.querySelector("div.offer-price span.discount") ||
+                                card.querySelector("[aria-label*='off']");
+                            if (discountEl) {
+                                discount = discountEl.innerText.replace(/[()]/g, "").trim();
+                            } else {
+                                // Try new BBS Price discount calculation
+                                const bbsPriceEl = card.querySelector("div._305pl span span");
+                                if (bbsPriceEl) {
+                                    const bbsPrice = Number(bbsPriceEl.textContent.replace(/[₹,]/g, ""));
+                                    if (price && bbsPrice < price) {
+                                        const discountPercent = Math.round(((price - bbsPrice) / price) * 100);
+                                        discount = `[${discountPercent}% off]`;
+                                    }
+                                }
+                            }
+
+                            if (name && price) {
+                                items.push({
+                                    name,
+                                    price,
+                                    link,
+                                    image,
+                                    brand,
+                                    discount,
+                                    reviews,
+                                    reviewRating,
+                                    platform: "Ajio"
+                                });
+                                console.log('Ajio: Added unique product:', name);
+                            }
+                        } catch (error) {
+                            console.error('Ajio: Error processing card:', error.message);
                         }
                     });
 
                     console.log(`Ajio: Total unique items found: ${items.length}`);
                     return items;
-                }, page);
+                });
             });
         } catch (error) {
             if (error.message === 'Request aborted') {
@@ -1054,6 +1064,91 @@ app.get('/api/suggestions', async (req, res) => {
     } catch (error) {
         console.error('Error fetching Amazon suggestions:', error);
         res.status(500).json({ error: 'Failed to fetch suggestions' });
+    }
+});
+
+// AI Response endpoint
+app.post('/api/ai-response', async (req, res) => {
+    try {
+        const { query } = req.body;
+        
+        if (!query) {
+            return res.status(400).json({ error: 'Query is required' });
+        }
+
+        console.log('Query:', query);
+        
+        // Add context to improve accuracy
+        const prompt = `You are a product expert. For the following question, provide detailed information about:
+        - Complete specifications
+        - Price comparison
+        - Value for money analysis
+        - Pros and cons
+        - Best alternatives in the price range
+        
+        For phones specifically, include:
+        - Processor and performance
+        - RAM and storage options
+        - Camera system details
+        - Battery life and charging
+        - Display specifications
+        - Current market price
+        - Better alternatives if any
+        
+        Question: ${query}`;
+        
+        const response = await axios.post(
+            "https://api.cohere.ai/v1/chat",
+            { 
+                message: prompt,
+                model: "command-light",
+                temperature: 0.2,
+                max_tokens: 800,
+                p: 0.9,
+                k: 0,
+                return_likelihoods: "NONE",
+                chat_history: [
+                    {
+                        role: "system",
+                        message: "You are a product expert who provides detailed, accurate information about products. Focus on giving comprehensive specifications, honest comparisons, and practical recommendations. Always include specific details about features, performance, and value for money."
+                    }
+                ]
+            },
+            {
+                headers: { 
+                    'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            }
+        );
+
+        if (!response.data || !response.data.text) {
+            throw new Error('Invalid response from API');
+        }
+
+        return res.status(200).json({ response: response.data.text });
+    } catch (error) {
+        console.error('Error getting AI response:', {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data
+        });
+        
+        // Fallback responses based on the type of error
+        let fallbackResponse;
+        if (error.response?.status === 404) {
+            fallbackResponse = "I'm having trouble accessing my knowledge base right now. Please try asking your question in a different way.";
+        } else if (error.response?.status === 401) {
+            fallbackResponse = "I'm having trouble authenticating with my service. Please try again later.";
+        } else if (error.response?.status === 429) {
+            fallbackResponse = "I'm getting too many requests right now. Please wait a moment and try again.";
+        } else {
+            fallbackResponse = "I apologize, but I'm having trouble providing an accurate response right now. Please try again later or rephrase your question.";
+        }
+
+        res.status(200).json({ response: fallbackResponse });
     }
 });
 

@@ -51,7 +51,6 @@ const useStore = create(
         Flipkart: true,
         Amazon: true,
         Meesho: true,
-        Myntra: false,
         Ajio: true,
       },
       searchSort: 'none',

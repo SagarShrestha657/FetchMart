@@ -44,6 +44,7 @@ function HomePage() {
   const requestIdRef = useRef(0);
   const cancelSource = useRef(null);
   const recentSearchesRef = useRef(null);
+  const debounceTimerRef = useRef(null);
 
   // Handle click outside
   useEffect(() => {
@@ -94,9 +95,18 @@ function HomePage() {
   const handleInputChange = (e) => {
     const value = e.target.value;
     setSearchQuery(value);
+    
+    // Clear any existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
     if (value.trim().length > 0) {
-      getSuggestions(value);
-      setShowSuggestions(true);
+      // Set a new timer
+      debounceTimerRef.current = setTimeout(() => {
+        getSuggestions(value);
+        setShowSuggestions(true);
+      }, 1000);
     } else {
       setSuggestions([]);
       setShowSuggestions(false);
@@ -514,16 +524,16 @@ function HomePage() {
           )
         }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {displayedResults.map((product, idx) => (
             <div
               key={product.id || idx}
-              className={`relative flex flex-col h-full bg-white dark:bg-gray-800 p-5 sm:p-6 rounded-2xl shadow hover:shadow-2xl transition-all duration-300 border-2 ${product.price === minPrice ? "border-pink-500 ring-2 ring-pink-200 dark:ring-pink-900" : "border-transparent hover:border-blue-200 dark:hover:border-blue-700"
+              className={`relative flex flex-col h-full bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-2xl shadow hover:shadow-2xl transition-all duration-300 border-2 ${product.price === minPrice ? "border-pink-500 ring-2 ring-pink-200 dark:ring-pink-900" : "border-transparent hover:border-blue-200 dark:hover:border-blue-700"
                 }`}
             >
               {/* Platform Tag and Wishlist Button Container */}
-              <div className="absolute top-3 left-0 right-0 flex justify-between items-center px-3">
-                <span className={`text-xs font-semibold px-3 py-1 rounded-full z-10 ${{
+              <div className="absolute top-1 sm:top-3 left-0 right-0 flex justify-between items-center px-2.5 sm:px-3">
+                <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full z-10 ${{
                   Amazon: "bg-yellow-100 text-yellow-700 dark:text-yellow-300  dark:bg-yellow-900",
                   Flipkart: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300",
                   Meesho: "bg-pink-100 dark:bg-pink-900 text-pink-700 dark:text-pink-300",
@@ -555,11 +565,11 @@ function HomePage() {
 
               {/* Product Image with enhanced styling */}
               {product.image && (
-                <div className="w-full flex justify-center items-center mb-3 min-h-[160px] group">
+                <div className="w-full flex justify-center items-center mb-3 min-h-[140px] xs:min-h-[160px] group">
                   <img
                     src={product.image}
                     alt={product.name}
-                    className="h-36 sm:h-40 object-contain rounded-xl shadow group-hover:scale-105 transition-transform duration-300"
+                    className="h-32 xs:h-36 sm:h-40 object-contain rounded-xl shadow group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
                   />
                 </div>
@@ -567,8 +577,8 @@ function HomePage() {
 
               {/* Product Info with enhanced styling */}
               <div className="flex flex-col flex-1 justify-between text-center mb-2">
-                <h2 className="font-semibold text-lg sm:text-xl text-gray-800 dark:text-gray-200 leading-tight line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{product.name}</h2>
-                <span className="text-sm text-gray-500 dark:text-gray-400 mt-1">{product.brand}</span>
+                <h2 className="font-semibold text-[14px] sm:text-lg lg:text-xl text-gray-800 dark:text-gray-200 leading-tight line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{product.name}</h2>
+                <span className="text-[12px] sm:text-sm text-gray-500 dark:text-gray-400 mt-1">{product.brand}</span>
 
                 {/* Rating and Reviews with enhanced styling */}
                 <div className="flex flex-col items-center mt-2 gap-1 text-sm">
@@ -577,13 +587,13 @@ function HomePage() {
                       {[1, 2, 3, 4, 5].map(i => {
                         const fillPercent = Math.max(0, Math.min(1, product.reviewRating - (i - 1)));
                         if (fillPercent === 1) {
-                          return <svg key={i} className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z" /></svg>;
+                          return <svg key={i} className="w-[14px] h-[14px] sm:w-4 sm:h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z" /></svg>;
                         } else if (fillPercent === 0) {
-                          return <svg key={i} className="w-4 h-4 text-gray-300 dark:text-gray-600" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z" /></svg>;
+                          return <svg key={i} className="w-[14px] h-[14px] sm:w-4 sm:h-4 text-gray-300 dark:text-gray-600" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z" /></svg>;
                         } else {
                           const gradId = `grad-${idx}-${i}`;
                           return (
-                            <svg key={i} className="w-4 h-4" viewBox="0 0 20 20">
+                            <svg key={i} className="w-[14px] h-[14px] sm:w-4 sm:h-4" viewBox="0 0 20 20">
                               <defs>
                                 <linearGradient id={gradId}>
                                   <stop offset={`${fillPercent * 100}%`} stopColor="#facc15" />
@@ -601,7 +611,7 @@ function HomePage() {
                     </div>
                   )}
                   {product.reviews && (
-                    <span className="text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900 rounded px-2 py-0.5">
+                    <span className="text-[12px] sm:text-sm text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900 rounded px-2 py-0.5">
                       {product.reviews}
                     </span>
                   )}
@@ -610,9 +620,9 @@ function HomePage() {
 
               {/* Price with enhanced styling */}
               <div className="flex justify-center items-center gap-2 mt-2">
-                <p className="text-xl font-bold text-blue-600 dark:text-blue-400">₹{product.price?.toLocaleString()}</p>
+                <p className="text-[16px] sm:text-lg lg:text-xl font-bold text-blue-600 dark:text-blue-400">₹{product.price?.toLocaleString()}</p>
                 {product.discount && (
-                  <span className="text-sm text-pink-600 dark:text-pink-400 bg-pink-100 dark:bg-pink-900 px-2 py-0.5 rounded font-semibold">[{product.discount}]</span>
+                  <span className="text-[12px] sm:text-sm text-pink-600 dark:text-pink-400 bg-pink-100 dark:bg-pink-900 px-2 py-0.5 rounded font-semibold">[{product.discount}]</span>
                 )}
               </div>
 
@@ -621,14 +631,14 @@ function HomePage() {
                 to={product.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 bg-gradient-to-r from-blue-500 to-pink-500 text-white py-2 rounded-full font-medium text-sm hover:scale-105 hover:shadow-lg transition-all duration-300 text-center"
+                className="mt-4 bg-gradient-to-r from-blue-500 to-pink-500 text-white py-2 rounded-full font-medium text-[13px] sm:text-sm hover:scale-105 hover:shadow-lg transition-all duration-300 text-center"
               >
                 Buy Now
               </Link>
 
               {/* Lowest Price Tag with enhanced styling */}
               {product.price === minPrice && (
-                <span className="absolute top-3 right-3 bg-pink-500 text-white px-3 py-1 text-xs rounded-full shadow font-bold animate-bounce"
+                <span className="absolute top-2 sm:top-3 right-2.5 sm:right-3 bg-pink-500 text-white px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs rounded-full shadow font-bold animate-bounce"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleWishlistToggle(product);
