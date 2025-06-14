@@ -201,7 +201,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         // Set longer timeout for page load
         await page.goto(url, {
             waitUntil: "networkidle2",
-            timeout: 45000  // Increased timeout to 30 seconds
+            timeout: 45000
         });
 
         // Add a small delay to ensure dynamic content loads
@@ -224,7 +224,20 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         throw error;
     } finally {
         if (browser) {
+            try {
             await browser.close();
+                console.log('Browser closed successfully');
+            } catch (err) {
+                console.error('Error closing browser:', err.message);
+                // Force kill browser process if normal close fails
+                if (process.platform === 'win32') {
+                    try {
+                        require('child_process').execSync('taskkill /F /IM chrome.exe /T');
+                    } catch (killErr) {
+                        console.error('Error force killing browser:', killErr.message);
+                    }
+                }
+            }
         }
     }
 }
@@ -441,16 +454,15 @@ async function scrapeMeesho(query, page = 1, signal) {
                 if (signal?.aborted) throw new Error('Request aborted');
 
                 // Wait for initial content to load
-                const found = await pageObj.waitForSelector("a[href*='/p/'], div.sc-dkrFOg", { timeout: 15000 }).catch(() => {
+                const found = await pageObj.waitForSelector("div.sc-dkrFOg.ProductListItem__GridCol-sc-1baba2g-0.ieFkkv.kdQjpv, a[href*='/p/'], div.sc-dkrFOg", { timeout: 15000 }).catch(() => {
                     console.log('Meesho: Product cards selector not found!');
                     return null;
                 });
-                console.log('Meesho: Product cards selector found:', !!found);
 
                 if (!found) {
-                    console.log('Meesho: No products found');
                     return [];
                 }
+
 
                 // Scroll to load more products
                 for (let i = 0; i < page * 3; i++) {
@@ -459,34 +471,32 @@ async function scrapeMeesho(query, page = 1, signal) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
 
+
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
-            
-
-                // Use Cheerio to parse the HTML
                 const $ = cheerio.load(html);
                 const items = [];
                 const seenProducts = new Set();
 
                 // Select all product cards with original selectors
-                $('a[href*="/p/"], div.sc-dkrFOg').each((index, card) => {
+                $('div.sc-dkrFOg.ProductListItem__GridCol-sc-1baba2g-0.ieFkkv.kdQjpv, a[href*="/p/"], div.sc-dkrFOg').each((index, card) => {
                     try {
-                        // Name - using exact selectors and taking first match only
-                        const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label]").first();
+                        // Name - using both old and new selectors
+                        const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label], p.sc-eDvSVe.gQDOBc.NewProductCardstyled__StyledDesktopProductTitle-sc-6y2tys-5").first();
                         let name = "";
                         if (nameEl.length) {
                             name = nameEl.attr('aria-label') || nameEl.text().trim();
                         }
 
-                        // Skip if product name is empty or already seen
-                        if (!name || seenProducts.has(name)) {
-                            return;
-                        }
+                            // Skip if product name is empty or already seen
+                            if (!name || seenProducts.has(name)) {
+                                return;
+                            }
                         seenProducts.add(name);
 
-                        // Price - using new selectors
+                        // Price - using both old and new selectors
                         const priceText = $(card).find(
-                            "h5, h5.dwCrSh, h4.sc-eDvSVe.biMVPh"
+                            "h5, h5.dwCrSh, h4.sc-eDvSVe.biMVPh, h5.sc-eDvSVe.dwCrSh"
                         ).text().replace(/[₹,]/g, "").trim();
                         const price = Number(priceText);
 
@@ -498,27 +508,28 @@ async function scrapeMeesho(query, page = 1, signal) {
                                 `https://www.meesho.com${linkEl.attr('href')}`) :
                             "";
 
-                        // Image - using original selectors
+                        // Image - using both old and new selectors
                         const image = $(card).find("img, img[data-nimg='fill']").attr('src') || "";
 
-                        // Discount - using new selectors
-                        const discount = $(card).find(
-                            "span.sc-eDvSVe.cBaVUX.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw, " +
-                            "span.sc-eDvSVe.cBaVUX.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw"
+                        // Discount - using both old and new selectors
+                        let discount = $(card).find(
+                            "span.sc-eDvSVe.cBaVUX.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw[color='greenBase'], " +
+                            "span.sc-eDvSVe.fkvMlU"
                         ).text().trim();
 
                         // Brand (Meesho usually doesn't show brand)
                         const brand = "";
 
-                        // Rating - using new selectors
+                        // Rating - using both old and new selectors
                         const ratingText = $(card).find(
                             "span.sc-eDvSVe.laVOtN"
                         ).text().trim();
                         const reviewRating = !isNaN(Number(ratingText)) ? Number(ratingText) : null;
 
-                        // Review count - using new selectors
+                        // Review count - using both old and new selectors
                         const reviewCountText = $(card).find(
-                            "span.sc-eDvSVe.XndEO.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc"
+                            "span.sc-eDvSVe.XndEO.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc, " +
+                            "span.sc-eDvSVe.XndEO.NewProductCardstyled__RatingCount-sc-6y2tys-22"
                         ).text().replace(/[^\d]/g, "");
                             let reviews = "";
                             let reviewCount = null;
@@ -707,6 +718,10 @@ async function scrapeAjio(query, page = 1, signal) {
                     return null;
                 });
 
+                if (!found) {
+                    return [];
+                }
+
                 // Scroll to load more products
                 for (let i = 0; i < page * 2; i++) {
                     if (signal?.aborted) throw new Error('Request aborted');
@@ -717,23 +732,23 @@ async function scrapeAjio(query, page = 1, signal) {
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
                 const $ = cheerio.load(html);
-                const items = [];
+                    const items = [];
                 const seenProducts = new Set();
 
                 // Select all product cards
                 $("a.rilrtl-products-list__desktop,a.rilrtl-products-list__link, div.item.rilrtl-products-list__item").each((_, card) => {
-                    try {
+                        try {
                         // Name - using exact selectors and taking first match only
                         const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label]").first();
-                        let name = "";
+                            let name = "";
                         if (nameEl.length) {
                             name = nameEl.attr('aria-label') || nameEl.text().trim();
-                        }
+                            }
 
-                        // Skip if product name is empty or already seen
-                        if (!name || seenProducts.has(name)) {
-                            return;
-                        }
+                            // Skip if product name is empty or already seen
+                            if (!name || seenProducts.has(name)) {
+                                return;
+                            }
                         seenProducts.add(name);
 
                         // Brand - using exact selectors and taking first match only
@@ -741,9 +756,9 @@ async function scrapeAjio(query, page = 1, signal) {
                         const brand = brandEl.text().trim() || "";
 
                         // Price - handle both regular and offer prices
-                        let price = null;
+                            let price = null;
                         let originalPrice = null;
-                        
+
                         // Check for new price structure with offer-price div
                         const offerPriceDiv = $(card).find("div.offer-price").first();
                         if (offerPriceDiv.length) {
@@ -757,7 +772,7 @@ async function scrapeAjio(query, page = 1, signal) {
                             if (originalPriceEl.length) {
                                 originalPrice = Number(originalPriceEl.text().replace(/[₹,]/g, ""));
                             }
-                        } else {
+                                } else {
                             // Check for offer price - taking first match only
                             const offerPriceEl = $(card).find("span.offer-pricess-new").first();
                             if (offerPriceEl.length) {
@@ -767,73 +782,73 @@ async function scrapeAjio(query, page = 1, signal) {
                                 if (originalPriceEl.length) {
                                     originalPrice = Number(originalPriceEl.text().replace(/[₹,]/g, ""));
                                 }
-                            } else {
+                                    } else {
                                 // Regular price - taking first match only
                                 const priceEl = $(card).find("span.price[aria-label] strong, span.price[aria-label], span.price strong").first();
                                 if (priceEl.length) {
                                     price = Number(priceEl.text().replace(/[₹,]/g, ""));
+                                    }
                                 }
                             }
-                        }
 
                         // Link - using exact selector
                         const linkEl = $(card).find("a.rilrtl-products-list__link[href*='/p/'], a.rilrtl-products-list__link.desktop[href*='/p/']").first();
-                        const link = linkEl.length ? 
-                            (linkEl.attr('href').startsWith("http") ? 
-                                linkEl.attr('href') : 
-                                "https://www.ajio.com" + linkEl.attr('href')) : 
+                        const link = linkEl.length ?
+                            (linkEl.attr('href').startsWith("http") ?
+                                linkEl.attr('href') :
+                                "https://www.ajio.com" + linkEl.attr('href')) :
                             "";
 
                         // Image - using exact selector
                         const imgEl = $(card).find("img.rilrtl-lazy-img.rilrtl-lazy-img-loaded").first();
-                        let image = "";
+                            let image = "";
                         if (imgEl.length) {
                             image = imgEl.attr('src');
-                            if (image && !image.startsWith('http')) {
-                                image = 'https:' + image;
+                                if (image && !image.startsWith('http')) {
+                                    image = 'https:' + image;
+                                }
                             }
-                        }
-                        if (!image) {
-                            image = "https://assets.ajio.com/static/img/plp.png";
-                        }
+                            if (!image) {
+                                image = "https://assets.ajio.com/static/img/plp.png";
+                            }
 
                         // Rating - using exact selector
-                        let reviewRating = null;
+                            let reviewRating = null;
                         const ratingEl = $(card).find("p._3I65V[aria-label]").first();
                         if (ratingEl.length) {
                             reviewRating = parseFloat(ratingEl.attr('aria-label') || ratingEl.text().trim());
-                        }
+                            }
 
                         // Review count - using exact selector
-                        let reviews = "";
+                            let reviews = "";
                         const reviewCountEl = $(card).find("p[aria-label^='|']").first();
                         if (reviewCountEl.length) {
                             const countText = reviewCountEl.attr('aria-label') || reviewCountEl.text();
                             const match = countText.match(/\d+(?:\.\d+)?[K]?/);
-                            if (match) {
+                                if (match) {
                                 let reviewCount = match[0];
                                 if (reviewCount.includes('K')) {
                                     reviewCount = parseFloat(reviewCount) * 1000;
                                 }
-                                reviews = reviewRating !== null
-                                    ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                                    : `${reviewCount.toLocaleString()} reviews`;
+                                    reviews = reviewRating !== null
+                                        ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
+                                        : `${reviewCount.toLocaleString()} reviews`;
+                                }
+                            } else if (reviewRating !== null) {
+                                reviews = `${reviewRating}`;
                             }
-                        } else if (reviewRating !== null) {
-                            reviews = `${reviewRating}`;
-                        }
 
                         // Discount - using exact selector
-                        let discount = "";
+                            let discount = "";
                         if (originalPrice && price) {
                             // Ensure prices are valid numbers and original price is greater than current price
                             if (!isNaN(originalPrice) && !isNaN(price) && originalPrice > price && originalPrice > 0) {
                                 const discountPercent = Math.round(((originalPrice - price) / originalPrice) * 100);
                                 // Only set discount if it's a reasonable percentage (0-95%)
                                 if (discountPercent >= 0 && discountPercent <= 95) {
-                                    discount = `[${discountPercent}% off]`;
+                                        discount = `[${discountPercent}% off]`;
+                                    }
                                 }
-                            }
                         } else {
                             // Try to find discount element in new structure
                             const discountEl = $(card).find("span.discount[aria-label]");
@@ -851,27 +866,27 @@ async function scrapeAjio(query, page = 1, signal) {
                                     discount = discountText;
                                 }
                             }
-                        }
+                            }
 
-                        if (name && price) {
-                            items.push({
-                                name,
-                                price,
-                                link,
-                                image,
-                                brand,
-                                discount,
-                                reviews,
-                                reviewRating,
-                                platform: "Ajio"
-                            });
+                            if (name && price) {
+                                items.push({
+                                    name,
+                                    price,
+                                    link,
+                                    image,
+                                    brand,
+                                    discount,
+                                    reviews,
+                                    reviewRating,
+                                    platform: "Ajio"
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Ajio: Error processing card:', error.message);
                         }
-                    } catch (error) {
-                        console.error('Ajio: Error processing card:', error.message);
-                    }
-                });
+                    });
 
-                return items;
+                    return items;
             });
         } catch (error) {
             if (error.message === 'Request aborted') {
@@ -1083,42 +1098,60 @@ app.post('/api/ai-response', async (req, res) => {
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
+              
+        // Add context to improve accuracy with concise response
+        const prompt = `You are a product expert. For the following question, provide a brief and concise response based on the question type:
 
-        console.log('Query:', query);
-        
-        // Add context to improve accuracy
-        const prompt = `You are a product expert. For the following question, provide detailed information about:
-        - Complete specifications
-        - Price comparison
-        - Value for money analysis
-        - Pros and cons
-        - Best alternatives in the price range
-        
-        For phones specifically, include:
-        - Processor and performance
-        - RAM and storage options
-        - Camera system details
-        - Battery life and charging
-        - Display specifications
-        - Current market price
-        - Better alternatives if any
-        
-        Question: ${query}`;
+For general product questions (like "best lipstick", "good phone under 20000"):
+1. Best Recommendation
+   • Why it's recommended
+   • Key features
+   • Price in ₹
+
+
+For comparison questions (like "iPhone vs Samsung", "compare these products"):
+1. Comparison
+   • Key differences
+   • Price comparison (in ₹)
+   • Best choice and why
+
+
+For specific product questions (like "tell me about iPhone 14"):
+1. Product Details
+   • Key features
+   • Price in ₹
+   • Pros and cons
+
+
+For recommendation questions (like "suggest a good laptop"):
+1. Recommendation
+   • Best option
+   • Why it's recommended
+   • Price in ₹
+   • Alternatives if needed
+
+
+Keep each section brief and to the point.
+Total response should be under 150 words.
+Always mention prices in Indian Rupees (₹) and not in dollars.
+Start each new point on a new line.
+
+Question: ${query}`;
         
         const response = await axios.post(
             "https://api.cohere.ai/v1/chat",
             { 
                 message: prompt,
-                model: "command-light",
+                model: "command",
                 temperature: 0.2,
-                max_tokens: 800,
+                max_tokens: 300,
                 p: 0.9,
                 k: 0,
                 return_likelihoods: "NONE",
                 chat_history: [
                     {
                         role: "system",
-                        message: "You are a product expert who provides detailed, accurate information about products. Focus on giving comprehensive specifications, honest comparisons, and practical recommendations. Always include specific details about features, performance, and value for money."
+                        message: "You are a product expert who provides concise, accurate information. Format your response based on the question type. Use bullet points and proper spacing. Keep responses under 150 words. Always mention prices in Indian Rupees (₹)."
                     }
                 ]
             },
