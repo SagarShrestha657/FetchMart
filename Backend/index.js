@@ -84,7 +84,7 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'Accept-Language': 'en-US,en;q=0.5',
                     'Connection': 'keep-alive'
                 },
-                timeout: 10000,
+                timeout: 20000,
                 signal,
                 maxRedirects: 5,
                 validateStatus: function (status) {
@@ -440,6 +440,7 @@ async function scrapeMeesho(query, page = 1, signal) {
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
+                // Wait for initial content to load
                 const found = await pageObj.waitForSelector("a[href*='/p/'], div.sc-dkrFOg", { timeout: 15000 }).catch(() => {
                     console.log('Meesho: Product cards selector not found!');
                     return null;
@@ -452,86 +453,93 @@ async function scrapeMeesho(query, page = 1, signal) {
                 }
 
                 // Scroll to load more products
-                for (let i = 0; i < page * 2; i++) {
+                for (let i = 0; i < page * 3; i++) {
                     if (signal?.aborted) throw new Error('Request aborted');
                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
 
-                return pageObj.evaluate(() => {
-                    const items = [];
-                    const seenProducts = new Set(); // Track unique product names
+                // Get the final HTML after scrolling
+                const html = await pageObj.content();
+            
 
-                    // Try both old and new selectors
-                    const cards = document.querySelectorAll("a[href*='/p/'], div.sc-dkrFOg");
-                    console.log('Meesho: Number of product cards found:', cards.length);
+                // Use Cheerio to parse the HTML
+                const $ = cheerio.load(html);
+                const items = [];
+                const seenProducts = new Set();
 
-                    cards.forEach((card, index) => {
-                        try {
-                            // Name - try both old and new selectors
-                            const nameEl = card.querySelector("p[class*='StyledDesktopProductTitle'], p.NewProductCardstyled__StyledDesktopProductTitle-sc-6y2tys-5");
-                            console.log(`Meesho: Card ${index} - Name element found:`, !!nameEl);
-                            const name = nameEl ? nameEl.innerText.trim() : "";
+                // Select all product cards with original selectors
+                $('a[href*="/p/"], div.sc-dkrFOg').each((index, card) => {
+                    try {
+                        // Name - using exact selectors and taking first match only
+                        const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label]").first();
+                        let name = "";
+                        if (nameEl.length) {
+                            name = nameEl.attr('aria-label') || nameEl.text().trim();
+                        }
 
-                            // Skip if product name is empty or already seen
-                            if (!name || seenProducts.has(name)) {
-                                console.log('Meesho: Skipping duplicate product:', name);
-                                return;
-                            }
-                            seenProducts.add(name); // Add to seen products
+                        // Skip if product name is empty or already seen
+                        if (!name || seenProducts.has(name)) {
+                            return;
+                        }
+                        seenProducts.add(name);
 
-                            // Price - try both old and new selectors
-                            const priceEl = card.querySelector("h5, h5.dwCrSh");
-                            console.log(`Meesho: Card ${index} - Price element found:`, !!priceEl);
-                            const price = priceEl ? Number(priceEl.innerText.replace(/[₹,]/g, "").trim()) : null;
+                        // Price - using new selectors
+                        const priceText = $(card).find(
+                            "h5, h5.dwCrSh, h4.sc-eDvSVe.biMVPh"
+                        ).text().replace(/[₹,]/g, "").trim();
+                        const price = Number(priceText);
 
-                            // Link - try both old and new selectors
-                            const linkEl = card.closest('a') || card.querySelector('a');
-                            const link = linkEl ? (linkEl.href.startsWith("http") ? linkEl.href : "https://www.meesho.com" + linkEl.getAttribute("href")) : "";
-                            console.log(`Meesho: Card ${index} - Link found:`, !!link);
+                        // Link - using original approach
+                        const linkEl = $(card).closest('a').length ? $(card).closest('a') : $(card).find('a');
+                        const link = linkEl.length ?
+                            (linkEl.attr('href').startsWith('http') ?
+                                linkEl.attr('href') :
+                                `https://www.meesho.com${linkEl.attr('href')}`) :
+                            "";
 
-                            // Image - try both old and new selectors
-                            const imgEl = card.querySelector("img, img[data-nimg='fill']");
-                            console.log(`Meesho: Card ${index} - Image element found:`, !!imgEl);
-                            const image = imgEl ? imgEl.src : "";
+                        // Image - using original selectors
+                        const image = $(card).find("img, img[data-nimg='fill']").attr('src') || "";
 
-                            // Discount - try both old and new selectors
-                            const discountEl = card.querySelector("span[class*='StyledDesktopSubtitle'], span.fkvMlU");
-                            console.log(`Meesho: Card ${index} - Discount element found:`, !!discountEl);
-                            const discount = discountEl ? discountEl.innerText.trim() : "";
+                        // Discount - using new selectors
+                        const discount = $(card).find(
+                            "span.sc-eDvSVe.cBaVUX.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw, " +
+                            "span.sc-eDvSVe.cBaVUX.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw.NewProductCardstyled__StyledDesktopSubtitle-sc-6y2tys-6.jBXJyw"
+                        ).text().trim();
 
-                            // Brand (Meesho usually doesn't show brand, set to empty string)
-                            let brand = "";
+                        // Brand (Meesho usually doesn't show brand)
+                        const brand = "";
 
-                            // Rating - try both old and new selectors
-                            const ratingEl = card.querySelector("span.Rating__StyledPill-sc-12htng8-1, span.dxBdQp");
-                            console.log(`Meesho: Card ${index} - Rating element found:`, !!ratingEl);
-                            let reviewRating = null;
-                            if (ratingEl) {
-                                const ratingText = ratingEl.innerText.trim();
-                                if (!isNaN(Number(ratingText))) reviewRating = Number(ratingText);
-                            }
+                        // Rating - using new selectors
+                        const ratingText = $(card).find(
+                            "span.sc-eDvSVe.laVOtN"
+                        ).text().trim();
+                        const reviewRating = !isNaN(Number(ratingText)) ? Number(ratingText) : null;
 
-                            // Review count - try both old and new selectors
-                            const reviewCountEl = card.querySelector("span.NewProductCardstyled__RatingCount-sc-6y2tys-22, span.iaGtYc");
-                            console.log(`Meesho: Card ${index} - Review count element found:`, !!reviewCountEl);
+                        // Review count - using new selectors
+                        const reviewCountText = $(card).find(
+                            "span.sc-eDvSVe.XndEO.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc.NewProductCardstyled__RatingCount-sc-6y2tys-22.iaGtYc"
+                        ).text().replace(/[^\d]/g, "");
                             let reviews = "";
                             let reviewCount = null;
-                            if (reviewCountEl) {
-                                const countText = reviewCountEl.innerText.replace(/[^\d]/g, "");
-                                if (countText) {
-                                    reviewCount = Number(countText);
+
+                        if (reviewCountText) {
+                            reviewCount = Number(reviewCountText);
                                     reviews = reviewRating !== null
                                         ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
                                         : `${reviewCount.toLocaleString()} reviews`;
                                 } else if (reviewRating !== null) {
                                     reviews = `${reviewRating}`;
                                 }
-                            } else if (reviewRating !== null) {
-                                reviews = `${reviewRating}`;
-                            }
 
-                            if (name && price && image) {
+                        // Check lengths and make empty if exceeded
+                        if (reviews.length > 20) {
+                            reviews = "";
+                        }
+                        if (discount.length > 15) {
+                            discount = "";
+                        }
+
                                 items.push({
                                     name,
                                     price,
@@ -543,15 +551,11 @@ async function scrapeMeesho(query, page = 1, signal) {
                                     reviewRating,
                                     platform: "Meesho"
                                 });
-
-                            }
-
                         } catch (error) {
                             console.error(`Meesho: Error processing card ${index}:`, error.message);
                         }
                     });
                     return items;
-                },);
             });
         } catch (error) {
             if (error.message === 'Request aborted') {
@@ -697,174 +701,177 @@ async function scrapeAjio(query, page = 1, signal) {
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
-                const found = await pageObj.waitForSelector("div.item.rilrtl-products-list__item, div.item.rilrtl-products-list__item.item, div[role='row'], div.rilrtl-products-list__item", { timeout: 15000 }).catch(() => {
+                // Wait for product cards to load
+                const found = await pageObj.waitForSelector("a.rilrtl-products-list__desktop, a.rilrtl-products-list__link, div.item.rilrtl-products-list__item", { timeout: 15000 }).catch(() => {
                     console.log('Ajio: Product cards selector not found!');
                     return null;
                 });
-                console.log('Ajio: Product cards selector found:', !!found);
 
                 // Scroll to load more products
-                for (let i = 0; i < page * 1; i++) {
+                for (let i = 0; i < page * 2; i++) {
                     if (signal?.aborted) throw new Error('Request aborted');
                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
 
-                return pageObj.evaluate(() => {
-                    const items = [];
-                    const seenProducts = new Set(); // Track unique product names
+                // Get the final HTML after scrolling
+                const html = await pageObj.content();
+                const $ = cheerio.load(html);
+                const items = [];
+                const seenProducts = new Set();
 
-                    const cards = document.querySelectorAll("div.item.rilrtl-products-list__item, div.item.rilrtl-products-list__item.item, div[role='row'], div.rilrtl-products-list__item");
-                    console.log('Ajio: Number of cards found:', cards.length);
-
-                    cards.forEach(card => {
-                        try {
-                            // Name - try all possible selectors
-                            const nameEl = card.querySelector("div.nameCls") ||
-                                card.querySelector("div.name-center") ||
-                                card.querySelector("div.name") ||
-                                card.querySelector("[aria-label*='Product image of']") ||
-                                card.querySelector("div[aria-label]");
-                            console.log('Ajio: Product name element found:', !!nameEl);
-                            let name = "";
-                            if (nameEl) {
-                                // Try aria-label first, then fallback to innerText
-                                name = nameEl.getAttribute('aria-label') || nameEl.innerText.trim();
-                                // Clean up name if it contains "Product image of"
-                                if (name.includes("Product image of")) {
-                                    name = name.replace("Product image of", "").trim();
-                                }
-                            }
-
-                            // Skip if product name is empty or already seen
-                            if (!name || seenProducts.has(name)) {
-                                console.log('Ajio: Skipping duplicate product:', name);
-                                return;
-                            }
-                            seenProducts.add(name); // Add to seen products
-
-                            // Brand - try all possible selectors
-                            const brandEl = card.querySelector("div.brand strong") ||
-                                card.querySelector("div.brand") ||
-                                card.querySelector("[aria-label*='brand']");
-                            console.log('Ajio: Brand element found:', !!brandEl);
-                            const brand = brandEl?.textContent.trim() || "";
-
-                            // Price - try all possible selectors
-                            let price = null;
-                            const priceEl = card.querySelector("span.price strong") ||
-                                card.querySelector("span.price #price-value") ||
-                                card.querySelector("span.price") ||
-                                card.querySelector("[aria-label*='price']");
-                            if (priceEl) {
-                                if (priceEl.id === "price-value") {
-                                    price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
-                                } else {
-                                    const priceValue = priceEl.querySelector("#price-value");
-                                    if (priceValue) {
-                                        price = Number(priceValue.textContent.replace(/[₹,]/g, ""));
-                                    } else {
-                                        const ariaLabel = priceEl.getAttribute("aria-label");
-                                        if (ariaLabel) {
-                                            price = Number(ariaLabel.replace(/[₹,]/g, ""));
-                                        } else {
-                                            price = Number(priceEl.textContent.replace(/[₹,]/g, ""));
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Link - try all possible selectors
-                            const linkEl = card.querySelector("a.rilrtl-products-list__link.desktop") ||
-                                card.querySelector("a.rilrtl-products-list__link") ||
-                                card.querySelector("a[href*='/p/']");
-                            const link = linkEl ? (linkEl.href.startsWith("http") ? linkEl.href : "https://www.ajio.com" + linkEl.getAttribute("href")) : "";
-
-                            // Image - try all possible selectors
-                            const imgEl = card.querySelector("img.rilrtl-lazy-img") ||
-                                card.querySelector("img.rilrtl-lazy-img.rilrtl-lazy-img-loaded");
-
-                            let image = "";
-                            if (imgEl) {
-                                image = imgEl.src;
-                                // If src doesn't start with http, add https:
-                                if (image && !image.startsWith('http')) {
-                                    image = 'https:' + image;
-                                }
-                            }
-                            // If no image found, use a default image
-                            if (!image) {
-                                image = "https://assets.ajio.com/static/img/plp.png";
-                            }
-
-                            // Rating - try all possible selectors
-                            let reviewRating = null;
-                            const ratingEl = card.querySelector("p._3I65V[aria-label]") ||
-                                card.querySelector("p._3I65V") ||
-                                card.querySelector("[aria-label*='out of 5']");
-                            if (ratingEl) {
-                                reviewRating = parseFloat(ratingEl.getAttribute("aria-label") || ratingEl.innerText.trim());
-                            }
-
-                            // Review count - try all possible selectors
-                            let reviews = "";
-                            const reviewCountEl = card.querySelector("p[aria-label^='|']") ||
-                                card.querySelector("p[aria-label]:not(._3I65V)") ||
-                                card.querySelector("[aria-label*='reviews']");
-                            if (reviewCountEl) {
-                                const countText = reviewCountEl.getAttribute("aria-label") || reviewCountEl.innerText;
-                                const match = countText.match(/\d+/);
-                                if (match) {
-                                    const reviewCount = Number(match[0]);
-                                    reviews = reviewRating !== null
-                                        ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                                        : `${reviewCount.toLocaleString()} reviews`;
-                                }
-                            } else if (reviewRating !== null) {
-                                reviews = `${reviewRating}`;
-                            }
-
-                            // Discount - try all possible selectors
-                            let discount = "";
-                            const discountEl = card.querySelector("span.discount") ||
-                                card.querySelector("div.offer-price span.discount") ||
-                                card.querySelector("[aria-label*='off']");
-                            if (discountEl) {
-                                discount = discountEl.innerText.replace(/[()]/g, "").trim();
-                            } else {
-                                // Try new BBS Price discount calculation
-                                const bbsPriceEl = card.querySelector("div._305pl span span");
-                                if (bbsPriceEl) {
-                                    const bbsPrice = Number(bbsPriceEl.textContent.replace(/[₹,]/g, ""));
-                                    if (price && bbsPrice < price) {
-                                        const discountPercent = Math.round(((price - bbsPrice) / price) * 100);
-                                        discount = `[${discountPercent}% off]`;
-                                    }
-                                }
-                            }
-
-                            if (name && price) {
-                                items.push({
-                                    name,
-                                    price,
-                                    link,
-                                    image,
-                                    brand,
-                                    discount,
-                                    reviews,
-                                    reviewRating,
-                                    platform: "Ajio"
-                                });
-                                console.log('Ajio: Added unique product:', name);
-                            }
-                        } catch (error) {
-                            console.error('Ajio: Error processing card:', error.message);
+                // Select all product cards
+                $("a.rilrtl-products-list__desktop,a.rilrtl-products-list__link, div.item.rilrtl-products-list__item").each((_, card) => {
+                    try {
+                        // Name - using exact selectors and taking first match only
+                        const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label]").first();
+                        let name = "";
+                        if (nameEl.length) {
+                            name = nameEl.attr('aria-label') || nameEl.text().trim();
                         }
-                    });
 
-                    console.log(`Ajio: Total unique items found: ${items.length}`);
-                    return items;
+                        // Skip if product name is empty or already seen
+                        if (!name || seenProducts.has(name)) {
+                            return;
+                        }
+                        seenProducts.add(name);
+
+                        // Brand - using exact selectors and taking first match only
+                        const brandEl = $(card).find("div.brand[aria-label] strong, div.brand[aria-label]").first();
+                        const brand = brandEl.text().trim() || "";
+
+                        // Price - handle both regular and offer prices
+                        let price = null;
+                        let originalPrice = null;
+                        
+                        // Check for new price structure with offer-price div
+                        const offerPriceDiv = $(card).find("div.offer-price").first();
+                        if (offerPriceDiv.length) {
+                            // Get the current price - taking first match only
+                            const currentPriceEl = $(card).find("span.price[aria-label] strong, span.price[aria-label], span.price strong").first();
+                            if (currentPriceEl.length) {
+                                price = Number(currentPriceEl.text().replace(/[₹,]/g, ""));
+                            }
+                            // Get original price from offer-price div - taking first match only
+                            const originalPriceEl = offerPriceDiv.find("span.orginal-price[aria-label]").first();
+                            if (originalPriceEl.length) {
+                                originalPrice = Number(originalPriceEl.text().replace(/[₹,]/g, ""));
+                            }
+                        } else {
+                            // Check for offer price - taking first match only
+                            const offerPriceEl = $(card).find("span.offer-pricess-new").first();
+                            if (offerPriceEl.length) {
+                                price = Number(offerPriceEl.text().replace(/[₹,]/g, ""));
+                                // Get original price - taking first match only
+                                const originalPriceEl = $(card).find("span.price[aria-label] strong, span.price[aria-label], span.price strong").first();
+                                if (originalPriceEl.length) {
+                                    originalPrice = Number(originalPriceEl.text().replace(/[₹,]/g, ""));
+                                }
+                            } else {
+                                // Regular price - taking first match only
+                                const priceEl = $(card).find("span.price[aria-label] strong, span.price[aria-label], span.price strong").first();
+                                if (priceEl.length) {
+                                    price = Number(priceEl.text().replace(/[₹,]/g, ""));
+                                }
+                            }
+                        }
+
+                        // Link - using exact selector
+                        const linkEl = $(card).find("a.rilrtl-products-list__link[href*='/p/'], a.rilrtl-products-list__link.desktop[href*='/p/']").first();
+                        const link = linkEl.length ? 
+                            (linkEl.attr('href').startsWith("http") ? 
+                                linkEl.attr('href') : 
+                                "https://www.ajio.com" + linkEl.attr('href')) : 
+                            "";
+
+                        // Image - using exact selector
+                        const imgEl = $(card).find("img.rilrtl-lazy-img.rilrtl-lazy-img-loaded").first();
+                        let image = "";
+                        if (imgEl.length) {
+                            image = imgEl.attr('src');
+                            if (image && !image.startsWith('http')) {
+                                image = 'https:' + image;
+                            }
+                        }
+                        if (!image) {
+                            image = "https://assets.ajio.com/static/img/plp.png";
+                        }
+
+                        // Rating - using exact selector
+                        let reviewRating = null;
+                        const ratingEl = $(card).find("p._3I65V[aria-label]").first();
+                        if (ratingEl.length) {
+                            reviewRating = parseFloat(ratingEl.attr('aria-label') || ratingEl.text().trim());
+                        }
+
+                        // Review count - using exact selector
+                        let reviews = "";
+                        const reviewCountEl = $(card).find("p[aria-label^='|']").first();
+                        if (reviewCountEl.length) {
+                            const countText = reviewCountEl.attr('aria-label') || reviewCountEl.text();
+                            const match = countText.match(/\d+(?:\.\d+)?[K]?/);
+                            if (match) {
+                                let reviewCount = match[0];
+                                if (reviewCount.includes('K')) {
+                                    reviewCount = parseFloat(reviewCount) * 1000;
+                                }
+                                reviews = reviewRating !== null
+                                    ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
+                                    : `${reviewCount.toLocaleString()} reviews`;
+                            }
+                        } else if (reviewRating !== null) {
+                            reviews = `${reviewRating}`;
+                        }
+
+                        // Discount - using exact selector
+                        let discount = "";
+                        if (originalPrice && price) {
+                            // Ensure prices are valid numbers and original price is greater than current price
+                            if (!isNaN(originalPrice) && !isNaN(price) && originalPrice > price && originalPrice > 0) {
+                                const discountPercent = Math.round(((originalPrice - price) / originalPrice) * 100);
+                                // Only set discount if it's a reasonable percentage (0-95%)
+                                if (discountPercent >= 0 && discountPercent <= 95) {
+                                    discount = `[${discountPercent}% off]`;
+                                }
+                            }
+                        } else {
+                            // Try to find discount element in new structure
+                            const discountEl = $(card).find("span.discount[aria-label]");
+                            if (discountEl.length) {
+                                const discountText = discountEl.attr('aria-label') || discountEl.text().replace(/[()]/g, "").trim();
+                                // Extract percentage if present and validate
+                                const match = discountText.match(/(\d+)%\s*off/i);
+                                if (match) {
+                                    const percent = parseInt(match[1]);
+                                    // Only set discount if it's a reasonable percentage (0-95%)
+                                    if (percent >= 0 && percent <= 95) {
+                                        discount = `[${percent}% off]`;
+                                    }
+                                } else {
+                                    discount = discountText;
+                                }
+                            }
+                        }
+
+                        if (name && price) {
+                            items.push({
+                                name,
+                                price,
+                                link,
+                                image,
+                                brand,
+                                discount,
+                                reviews,
+                                reviewRating,
+                                platform: "Ajio"
+                            });
+                        }
+                    } catch (error) {
+                        console.error('Ajio: Error processing card:', error.message);
+                    }
                 });
+
+                return items;
             });
         } catch (error) {
             if (error.message === 'Request aborted') {
@@ -876,6 +883,7 @@ async function scrapeAjio(query, page = 1, signal) {
         }
     }, 3, signal, 'Ajio');
 }
+
 
 // API Route
 app.post("/api/search", async (req, res) => {

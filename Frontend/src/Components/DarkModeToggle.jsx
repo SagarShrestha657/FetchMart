@@ -13,7 +13,7 @@ const DarkModeToggle = () => {
       {isDarkMode ? (
         // Moon icon for dark mode
         <svg
-          className="w-6 h-6 text-gray-800 dark:text-yellow-300"
+          className="w-8 h-8  text-gray-800 dark:text-yellow-300"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -28,7 +28,7 @@ const DarkModeToggle = () => {
       ) : (
         // Sun icon for light mode
         <svg
-          className="w-6 h-6 text-yellow-500"
+          className="w-8 h-8  text-yellow-500"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
