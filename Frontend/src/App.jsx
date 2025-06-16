@@ -11,6 +11,7 @@ import AboutPage from './Pages/AboutPage';
 import Chat from './Pages/Chat';
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
+import ComparePage from './Pages/ComparePage';
 
 function App() {
   const { isDarkMode } = useStore();
@@ -35,6 +36,7 @@ function App() {
             <Route path="/wishlist" element={<WishlistPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/chat" element={<Chat />} />
+            <Route path="/compare" element={<ComparePage />} />
             {/* Add more routes here as needed */}
           </Routes>
         </main>

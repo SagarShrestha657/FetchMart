@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import dotenv from 'dotenv';
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import compareRoutes from './src/Routes/compareRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -713,7 +714,7 @@ async function scrapeAjio(query, page = 1, signal) {
                 if (signal?.aborted) throw new Error('Request aborted');
 
                 // Wait for product cards to load
-                const found = await pageObj.waitForSelector("a.rilrtl-products-list__desktop, a.rilrtl-products-list__link, div.item.rilrtl-products-list__item", { timeout: 15000 }).catch(() => {
+                const found = await pageObj.waitForSelector("a.rilrtl-products-list__desktop, div.item.rilrtl-products-list__item.item, div[role='row'], a.rilrtl-products-list__link, div.item.rilrtl-products-list__item", { timeout: 15000 }).catch(() => {
                     console.log('Ajio: Product cards selector not found!');
                     return null;
                 });
@@ -736,7 +737,7 @@ async function scrapeAjio(query, page = 1, signal) {
                 const seenProducts = new Set();
 
                 // Select all product cards
-                $("a.rilrtl-products-list__desktop,a.rilrtl-products-list__link, div.item.rilrtl-products-list__item").each((_, card) => {
+                $("a.rilrtl-products-list__desktop, div.item.rilrtl-products-list__item.item, div[role='row'],a.rilrtl-products-list__link, div.item.rilrtl-products-list__item").each((_, card) => {
                         try {
                         // Name - using exact selectors and taking first match only
                         const nameEl = $(card).find("div.name[aria-label], div.name-center[aria-label], div.nameCls[aria-label]").first();
@@ -1193,6 +1194,8 @@ Question: ${query}`;
     }
 });
 
+// Add this with other app.use statements
+app.use('/api/compare', compareRoutes);
 // Handle process termination
 process.on("SIGTERM", async () => {
     await abortCurrentRequest();
@@ -1207,3 +1210,6 @@ process.on("SIGINT", async () => {
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+
+

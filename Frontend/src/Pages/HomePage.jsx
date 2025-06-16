@@ -3,7 +3,7 @@ import axios from "axios";
 import InfiniteScroll from "react-infinite-scroll-component";
 import NProgress from "nprogress"; // Import NProgress
 import "../styles/nprogress.css";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import useStore from '../States/store';
 import toast from 'react-hot-toast';
 
@@ -41,10 +41,12 @@ function HomePage() {
   const [showRecentSearches, setShowRecentSearches] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState([]);
   const requestIdRef = useRef(0);
   const cancelSource = useRef(null);
   const recentSearchesRef = useRef(null);
   const debounceTimerRef = useRef(null);
+  const navigate = useNavigate();
 
   // Handle click outside
   useEffect(() => {
@@ -304,6 +306,36 @@ function HomePage() {
     }
   };
 
+  const handleProductSelect = (product) => {
+    if (selectedProducts.some(p => p.platform === product.platform && p.name === product.name)) {
+      setSelectedProducts(selectedProducts.filter(p => !(p.platform === product.platform && p.name === product.name)));
+    } else if (selectedProducts.length < 2) {
+      setSelectedProducts([...selectedProducts, product]);
+    } else {
+      toast.error('You can only compare 2 products at a time');
+    }
+  };
+
+  const handleCompare = () => {
+    if (selectedProducts.length !== 2) {
+      toast.error('Please select exactly 2 products to compare');
+      return;
+    }
+
+    // Format products with required details
+    const productsToCompare = selectedProducts.map(product => ({
+      link: product.link,
+      platform: product.platform,
+      name: product.name,
+      price: product.price,
+      reviewRating: product.reviewRating,
+      reviews: product.reviews,
+      image: product.image
+    }));
+
+    navigate('/compare', { state: { products: productsToCompare } });
+  };
+
   const displayedResults = searchResults
     .sort((a, b) => {
       if (searchSort === "asc") return a.price - b.price;
@@ -316,6 +348,8 @@ function HomePage() {
       ? Math.min(...displayedResults.map((item) => item.price))
       : null;
 
+
+  console.log(searchResults)
   return (
     <div className="min-h-screen  w-full mx-auto bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-900 dark:to-gray-800  backdrop-blur-sm rounded-2xl p-6 shadow-lg transition-colors duration-300">
       {/* <div className="w-full mx-auto bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg"> */}
@@ -468,6 +502,15 @@ function HomePage() {
         </button>
       </div>
 
+      {/* Informational Note */}
+      <div className="text-center mb-8 px-4">
+        <div className="inline-block bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 max-w-2xl">
+          <p className="text-gray-700 dark:text-gray-300 text-[10px] sm:text-base">
+            <span className="font-semibold text-blue-600 dark:text-blue-400">Note:</span> Search may take a few moments as we gather prices from multiple platforms. To compare products, simply click on two products to select them, then click the "Compare" button that appears. You can also add products to your wishlist for later comparison.
+          </p>
+        </div>
+      </div>
+
       {/* Filters and Sort with enhanced styling */}
       <div className="flex flex-wrap justify-center gap-3 sm:gap-5 mb-10">
         {Object.keys(searchFilters).map((platform) => (
@@ -524,15 +567,38 @@ function HomePage() {
           )
         }
       >
+        {/* Compare Button - Show only when products are selected */}
+        {selectedProducts.length > 0 && (
+          <div className="flex justify-center mb-6">
+            <button
+              onClick={handleCompare}
+              disabled={selectedProducts.length !== 2}
+              className={`px-6 py-2 rounded-full font-medium transition-all duration-300 ${
+                selectedProducts.length === 2
+                  ? 'bg-gradient-to-r from-blue-500 to-pink-500 text-white hover:scale-105 hover:shadow-lg'
+                  : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Compare {selectedProducts.length}/2 Products
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {displayedResults.map((product, idx) => (
             <div
               key={product.id || idx}
-              className={`relative flex flex-col h-full bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-2xl shadow hover:shadow-2xl transition-all duration-300 border-2 ${product.price === minPrice ? "border-pink-500 ring-2 ring-pink-200 dark:ring-pink-900" : "border-transparent hover:border-blue-200 dark:hover:border-blue-700"
-                }`}
+              className={`relative flex flex-col h-full bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-2xl shadow hover:shadow-2xl transition-all duration-300 border-2 ${
+                product.price === minPrice 
+                  ? "border-pink-500 ring-2 ring-pink-200 dark:ring-pink-900" 
+                  : selectedProducts.some(p => p.platform === product.platform && p.name === product.name)
+                    ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-900"
+                    : "border-transparent hover:border-blue-200 dark:hover:border-blue-700"
+              }`}
+              onClick={() => handleProductSelect(product)}
             >
               {/* Platform Tag and Wishlist Button Container */}
-              <div className="absolute top-1 sm:top-3 left-0 right-0 flex justify-between items-center px-2.5 sm:px-3">
+              <div className="absolute top-1 sm:top-3 left-0 right-0 flex justify-between items-start px-2.5 sm:px-3">
                 <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full z-10 ${{
                   Amazon: "bg-yellow-100 text-yellow-700 dark:text-yellow-300  dark:bg-yellow-900",
                   Flipkart: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300",
@@ -544,23 +610,32 @@ function HomePage() {
                   {product.platform}
                 </span>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleWishlistToggle(product);
-                  }}
-                  className="p-1 hover:scale-110 transition-transform"
-                >
-                  {wishlistStore.isInWishlist(product) ? (
-                    <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
+                <div className="relative">
+                  {selectedProducts.some(p => p.platform === product.platform && p.name === product.name) && (
+                    <div className="absolute -top-4 sm:-top-6 right-0 w-5 h-5 sm:w-6 sm:h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                      <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
                   )}
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleWishlistToggle(product);
+                    }}
+                    className="p-1 hover:scale-110 transition-transform"
+                  >
+                    {wishlistStore.isInWishlist(product) ? (
+                      <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Product Image with enhanced styling */}

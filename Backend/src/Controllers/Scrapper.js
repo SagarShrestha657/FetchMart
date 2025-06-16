@@ -474,8 +474,8 @@ async function scrapeFlipkart(query, page = 1, limit = 10, signal) {
                     if (match) {
                         const reviewCount = parseInt(match[1].replace(/,/g, ''));
                         item.reviews = item.reviewRating !== null
-                            ? `${item.reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                            : `${reviewCount.toLocaleString()} reviews`;
+                            ? `${item.reviewRating} (${reviewCount})`
+                            : `${reviewCount}`;
                     }
                 } else if (item.reviewRating !== null) {
                     item.reviews = `${item.reviewRating}`;
@@ -602,8 +602,8 @@ async function scrapeAmazon(query, page = 1, limit = 10, signal) {
                     if (!isNaN(Number(countText))) {
                         const reviewCount = Number(countText);
                         item.reviews = item.reviewRating !== null
-                            ? `${item.reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                            : `${reviewCount.toLocaleString()} reviews`;
+                            ? `${item.reviewRating} (${reviewCount})`
+                            : `${reviewCount}`;
                     }
                 } else if (item.reviewRating !== null) {
                     item.reviews = `${item.reviewRating}`;
@@ -683,8 +683,8 @@ async function scrapeMeesho(query, page = 1, limit = 10, signal) {
                         if (countText) {
                             reviewCount = Number(countText);
                             reviews = reviewRating !== null
-                                ? `${reviewRating} (${reviewCount.toLocaleString()} reviews)`
-                                : `${reviewCount.toLocaleString()} reviews`;
+                                ? `${reviewRating} (${reviewCount})`
+                                : `${reviewCount}`;
                         } else if (reviewRating !== null) {
                             reviews = `${reviewRating}`;
                         }
@@ -858,10 +858,11 @@ async function scrapeAjio(query, page = 1, limit = 10, signal) {
 
                     // Format reviews string
                     if (reviewRating !== null && reviewCount !== null) {
-                        reviews = `${reviewRating} (${reviewCount.toLocaleString()} reviews)`;
+                        reviews = `${reviewRating} (${reviewCount})`;
                     } else if (reviewRating !== null) {
                         reviews = `${reviewRating}`;
                     } else if (reviewCount !== null) {
+                        reviews = `${reviewCount}`;
                         reviews = `${reviewCount.toLocaleString()} reviews`;
                     }
 

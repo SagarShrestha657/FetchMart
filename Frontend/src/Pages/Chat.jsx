@@ -94,7 +94,7 @@ const Chat = () => {
       </div>
 
       {/* Scrollable Messages Container */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <div className="flex-1 overflow-y-auto scrollbar-hide bg-gradient-to-b from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800">
         {error && (
           <div className="bg-red-100 dark:bg-red-900/50 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 px-4 py-3 m-4 rounded-lg relative" role="alert">
             <strong className="font-bold">Error: </strong>
@@ -105,12 +105,27 @@ const Chat = () => {
         <div className="p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex justify-center items-center h-full text-gray-500 dark:text-gray-400">
-              <div className="text-center">
+              <div className="text-center max-w-2xl mx-auto p-6">
                 <svg className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                <p className="text-lg font-medium">No messages yet</p>
-                <p className="text-sm mt-2">Start a conversation with our AI assistant!</p>
+                <p className="text-lg font-medium mb-4">No messages yet</p>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                  <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">What I can help you with:</h3>
+                  <ul className="text-sm text-blue-700 dark:text-blue-200 space-y-1">
+                    <li>• Compare products and suggest the best option</li>
+                    <li>• Recommend products based on your needs</li>
+                    <li>• Provide product specifications and features</li>
+                    <li>• Find the best products in your budget</li>
+                  </ul>
+                </div>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                  <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">Please note:</h3>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-200">
+                    While I aim to provide helpful information, my responses may not always be 100% accurate. 
+                    Please verify important details before making purchase decisions.
+                  </p>
+                </div>
               </div>
             </div>
           )}
