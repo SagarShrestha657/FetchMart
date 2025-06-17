@@ -92,11 +92,22 @@ const scrapeAmazon = async (url) => {
   };
 
   // Check selectors
-  const hasColumnSelector = $('div.a-column.a-span12.a-span-last').length > 0;
   const hasGridSelector = $('div.a-section[role="list"] div.a-fixed-left-grid.product-facts-detail').length > 0;
+  const hasColumnSelector = $('div.a-column.a-span12.a-span-last').length > 0;
   console.log('Amazon selectors found:', {
     columnSelector: hasColumnSelector,
     gridSelector: hasGridSelector
+  });
+
+  // Extract details from fixed-left-grid structure
+  $('div.a-section[role="list"] div.a-fixed-left-grid.product-facts-detail').each((_, element) => {
+    const key = $(element).find('div.a-fixed-left-grid-col.a-col-left span.a-color-base').text().trim();
+    const value = $(element).find('div.a-fixed-left-grid-col.a-col-right span.a-color-base').text().trim();
+
+    const normalizedKey = normalizeKey(key);
+    if (key && value && !details.has(normalizedKey)) {
+      details.set(normalizedKey, value);
+    }
   });
 
   // Extract product details using the new selectors
@@ -113,17 +124,7 @@ const scrapeAmazon = async (url) => {
     });
   });
 
-  // Extract details from fixed-left-grid structure
-  $('div.a-section[role="list"] div.a-fixed-left-grid.product-facts-detail').each((_, element) => {
-    const key = $(element).find('div.a-fixed-left-grid-col.a-col-left span.a-color-base').text().trim();
-    const value = $(element).find('div.a-fixed-left-grid-col.a-col-right span.a-color-base').text().trim();
-
-    const normalizedKey = normalizeKey(key);
-    if (key && value && !details.has(normalizedKey)) {
-      details.set(normalizedKey, value);
-    }
-  });
-
+  console.log('Amazon Details Length:', Object.keys(Object.fromEntries(details)).length);
   return Object.fromEntries(details);
 };
 
@@ -152,7 +153,7 @@ const scrapeFlipkart = async (url) => {
 
   // Check selectors
   const hasTableSelector = $('._1OjC5I .GNDEQ- table._0ZhAN9 tbody tr').length > 0;
-  const hasRowSelector = $('div.sBVJqn div.row').length > 0;
+  const hasRowSelector = $('div.sBVJqn._8vsVX1 div.row').length > 0;
   console.log('Flipkart selectors found:', {
     tableSelector: hasTableSelector,
     rowSelector: hasRowSelector
@@ -170,7 +171,7 @@ const scrapeFlipkart = async (url) => {
   });
 
   // Extract details from row structure
-  $('div.sBVJqn div.row').each((_, element) => {
+  $('div.sBVJqn._8vsVX1 div.row').each((_, element) => {
     const key = $(element).find('div.col.col-3-12._9NUIO9').text().trim();
     const value = $(element).find('div.col.col-9-12.-gXFvC').text().trim();
 
@@ -180,6 +181,7 @@ const scrapeFlipkart = async (url) => {
     }
   });
 
+  console.log('Flipkart Details Length:', Object.keys(Object.fromEntries(details)).length);
   return Object.fromEntries(details);
 };
 
@@ -243,6 +245,7 @@ const scrapeMeesho = async (url) => {
     }
   });
 
+  console.log('Meesho Details Length:', Object.keys(Object.fromEntries(details)).length);
   return Object.fromEntries(details);
 };
 
@@ -251,7 +254,7 @@ const scrapeMyntra = async (url) => {
     const response = await axios.get(url);
     const $ = cheerio.load(response.data);
 
-    return {
+    const result = {
       name: $('h1.pdp-title').text().trim(),
       price: parseFloat($('.pdp-price').text().replace(/[^0-9.]/g, '')),
       originalPrice: parseFloat($('.pdp-mrp').text().replace(/[^0-9.]/g, '')),
@@ -261,6 +264,8 @@ const scrapeMyntra = async (url) => {
       image: $('img.pdp-image').attr('src'),
       platform: 'Myntra'
     };
+    console.log('Myntra Details Length:', Object.keys(result).length);
+    return result;
   } catch (error) {
     console.error('Error scraping Myntra:', error);
     throw error;
@@ -268,12 +273,12 @@ const scrapeMyntra = async (url) => {
 };
 
 const scrapeAjio = async (url) => {
-  console.log('Starting Ajio scraping for URL:', url);
+  const userAgent = randomUseragent.getRandom();
   let browser = null;
 
   try {
-    const launchOptions = {
-      headless: "New",
+    browser = await puppeteer.launch({
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -291,90 +296,62 @@ const scrapeAjio = async (url) => {
             : '/usr/bin/google-chrome',
       ignoreHTTPSErrors: true,
       timeout: 45000
-    };
+    });
 
-    browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
 
-    // Set random user agent
-    const userAgent = randomUseragent.getRandom();
     if (userAgent) {
       await page.setUserAgent(userAgent);
     }
 
     await page.setViewport({ width: 1920, height: 1080 });
 
-    // // Set extra headers
-    // await page.setExtraHTTPHeaders({
-    //   'Accept-Language': 'en-US,en;q=0.9',
-    //   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    //   'Accept-Encoding': 'gzip, deflate, br',
-    //   'Connection': 'keep-alive',
-    //   'Upgrade-Insecure-Requests': '1',
-    //   'Sec-Fetch-Dest': 'document',
-    //   'Sec-Fetch-Mode': 'navigate',
-    //   'Sec-Fetch-Site': 'none',
-    //   'Sec-Fetch-User': '?1',
-    //   'Cache-Control': 'no-cache',
-    //   'Pragma': 'no-cache'
-    // });
-
-    // // Enable request interception
-    // await page.setRequestInterception(true);
-    // page.on('request', (request) => {
-    //   // Block unnecessary resources
-    //   const resourceType = request.resourceType();
-    //   if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-    //     request.abort();
-    //   } else {
-    //     request.continue();
-    //   }
-    // });
-
-    console.log('Navigating to URL...');
+    // Set longer timeout for page load
     await page.goto(url, {
       waitUntil: "networkidle2",
       timeout: 45000
     });
 
-    // Add a small delay to ensure dynamic content loads
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // First scroll
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Scroll to load more content
-    console.log('Scrolling to load content...');
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    // Second scroll
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Get the HTML content
     const html = await page.content();
-    console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
+    console.log('Ajio Response Length:', html.length);
 
     // Check if page length is below threshold
     if (html.length < 5000) {
-      console.log('Page content too small');
-      return {};
+      return null;
     }
 
-    const $ = cheerio.load(html);
-    console.log('Page content loaded');
+    // Wait for the product details to load
+    const found = await page.waitForSelector('ul.prod-list li.detail-list, div.prod-list li.detail-list', { timeout: 10000 })
+      .catch(() => {
+        console.log('Product details selector not found')
+        return []
+      }
+      );
 
-    // First find the product details section
-    const productSection = $('section.prod-desc');
-    if (!productSection.length) {
-      console.log('Product details section not found');
-      return {};
+    if (!found) {
+      console.log('Ajio: Product cards selector not found!');
+      return [];
     }
 
-    // Then find the list items within the section
-    const listItems = productSection.find('li.detail-list');
-    console.log('Found list items:', listItems.length);
+    // Get the page content
+    const content = await page.content();
+    const $ = cheerio.load(content);
 
-    if (!listItems.length) {
-      console.log('No list items found in product details section');
-      return {};
-    }
+    // Check if the selector is present
+    const hasSelector = $('ul.prod-list li.detail-list, div.prod-list li.detail-list').length > 0;
+    console.log('Ajio selector found:', hasSelector);
 
     const details = new Map();
 
@@ -383,8 +360,8 @@ const scrapeAjio = async (url) => {
       return key.toLowerCase().trim().replace(/\s+/g, ' ');
     };
 
-    // Extract details from the list items
-    listItems.each((_, element) => {
+    // Extract details from the product list
+    $('ul.prod-list li.detail-list, div.prod-list li.detail-list').each((_, element) => {
       const text = $(element).text().trim();
       if (text) {
         const parts = text.split(':');
@@ -399,12 +376,15 @@ const scrapeAjio = async (url) => {
       }
     });
 
-    console.log('Extracted details:', Object.fromEntries(details));
+    console.log('Ajio Details Length:', Object.keys(Object.fromEntries(details)).length);
     return Object.fromEntries(details);
 
   } catch (error) {
-    console.error('Error in scrapeAjio:', error.message);
-    return {};
+    console.error('Error in scrapeAjio:', {
+      message: error.message,
+      url: url
+    });
+    throw error;
   } finally {
     if (browser) {
       await browser.close();
@@ -419,11 +399,8 @@ export const compareProducts = async (req, res) => {
       return res.status(400).json({ error: "Please provide exactly 2 products to compare" });
     }
 
-    const results = {};
-    const productDetails = [];
-
-    // Get details for both products
-    for (const product of products) {
+    // Create an array of promises for parallel execution
+    const scrapePromises = products.map(async (product) => {
       let details;
       try {
         switch (product.platform.toLowerCase()) {
@@ -443,14 +420,17 @@ export const compareProducts = async (req, res) => {
             details = await scrapeWithRetry(scrapeMyntra, product.link, 'Myntra');
             break;
           default:
-            return res.status(400).json({ error: `Unsupported platform: ${product.platform}` });
+            throw new Error(`Unsupported platform: ${product.platform}`);
         }
       } catch (error) {
         console.error(`Error scraping ${product.platform}:`, error);
         details = {}; // Empty object if scraping fails
       }
-      productDetails.push(details || {}); // Ensure we always have an object
-    }
+      return details || {}; // Ensure we always have an object
+    });
+
+    // Wait for all scraping to complete in parallel
+    const productDetails = await Promise.all(scrapePromises);
 
     // Combine all unique keys from both products
     const allKeys = new Set([
@@ -459,6 +439,7 @@ export const compareProducts = async (req, res) => {
     ]);
 
     // Create the final structure with two values for each key
+    const results = {};
     allKeys.forEach(key => {
       // Normalize the key (remove extra spaces, convert to lowercase for comparison)
       const normalizedKey = key.toLowerCase().trim();

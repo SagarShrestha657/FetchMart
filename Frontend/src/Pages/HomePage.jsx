@@ -349,7 +349,7 @@ function HomePage() {
       : null;
 
 
-  console.log(searchResults)
+
   return (
     <div className="min-h-screen  w-full mx-auto bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-900 dark:to-gray-800  backdrop-blur-sm rounded-2xl p-6 shadow-lg transition-colors duration-300">
       {/* <div className="w-full mx-auto bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg"> */}
@@ -506,7 +506,7 @@ function HomePage() {
       <div className="text-center mb-8 px-4">
         <div className="inline-block bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 max-w-2xl">
           <p className="text-gray-700 dark:text-gray-300 text-[10px] sm:text-base">
-            <span className="font-semibold text-blue-600 dark:text-blue-400">Note:</span> Search may take a few moments as we gather prices from multiple platforms. To compare products, simply click on two products to select them, then click the "Compare" button that appears. You can also add products to your wishlist for later comparison.
+            <span className="font-semibold text-blue-600 dark:text-blue-400">Note:</span> Due to using Render's free tier and Puppeteer for web scraping, the initial search may take 2 - 3 minutes as the server spins up. Subsequent searches will be faster. To compare products, simply click on two products to select them, then click the "Compare" button that appears. You can also add products to your wishlist for later comparison.
           </p>
         </div>
       </div>

@@ -461,6 +461,7 @@ async function scrapeMeesho(query, page = 1, signal) {
                 });
 
                 if (!found) {
+                    console.log("'Meesho: Product cards selector not found!")
                     return [];
                 }
 
@@ -720,6 +721,7 @@ async function scrapeAjio(query, page = 1, signal) {
                 });
 
                 if (!found) {
+                    console.log('Ajio: Product cards selector not found!');
                     return [];
                 }
 

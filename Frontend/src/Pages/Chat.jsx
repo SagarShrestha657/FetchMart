@@ -75,15 +75,9 @@ const Chat = () => {
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200">
       {/* Fixed Header */}
-      <div className="sticky top-16 z-10 flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-sm">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-        >
-          <FiArrowLeft className="mr-2" />
-          Back to Home
-        </button>
-        <h1 className="text-xl font-semibold text-gray-800 dark:text-white">AI Assistant</h1>
+      <div className="sticky top-16 z-10 flex items-center justify-between p-2 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-sm">
+        <div className="w-10"></div> {/* Spacer for balance */}
+        <h1 className="text-base sm:text-xl font-semibold text-gray-800 dark:text-white text-center flex-1">AI Assistant</h1>
         <button
           onClick={handleClearChat}
           className="flex items-center text-gray-600 dark:text-gray-300 hover:text-red-500 dark:hover:text-red-400 transition-colors"
@@ -135,10 +129,10 @@ const Chat = () => {
               className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[70%] rounded-2xl p-4 shadow-sm ${
+                className={`max-w-[70%] rounded-2xl p-3 md:px-4 shadow-sm ${
                   message.sender === 'user'
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
-                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700'
+                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs sm:text-base'
+                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-xs sm:text-base'
                 }`}
               >
                 {message.text}

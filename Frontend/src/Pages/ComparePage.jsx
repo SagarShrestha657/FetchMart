@@ -123,7 +123,7 @@ const ComparePage = () => {
               <thead className="bg-gray-200 dark:bg-gray-700 sticky top-0">
                 <tr>
                   <th className="w-1/5 px-6 py-4 text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-600">
-                    Features
+                    Specifications
                   </th>
                   <th className="w-2/5 px-6 py-4 text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-600">
                     Product 1
@@ -161,7 +161,7 @@ const ComparePage = () => {
                   </td>
                   {Object.entries(comparisonData.name).map(([platform, name]) => (
                     <td key={platform} className="w-2/5 px-6 py-4">
-                      <h3 className="text-sm sm:text-lg font-semibold text-gray-900 dark:text-white">
+                      <h3 className="text-xs sm:text-lg font-semibold text-gray-900 dark:text-white">
                         {name || '-'}
                       </h3>
                     </td>
