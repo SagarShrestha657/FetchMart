@@ -9,10 +9,6 @@ const NavbarComponent = () => {
 
   const isActive = (path) => location.pathname === path;
 
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
-
   return (
     <nav className="sticky top-0 z-50 w-full bg-white/80 dark:bg-gray-900 backdrop-blur-md shadow-md border-b border-gray-300 dark:border-gray-800">
       <div className="w-full mx-auto px-2 sm:px-4 lg:px-6">
@@ -21,7 +17,7 @@ const NavbarComponent = () => {
             to="/"
             className="flex items-center gap-2 hover:scale-105 transition-transform"
           >
-            <img src="/logo.svg" alt="FetchMart Logo" className="h-10" />
+            <img src="/logo.svg" alt="FetchMart Logo" className="h-8 sm:h-10" />
           </Link>
           
           {/* Mobile menu button */}

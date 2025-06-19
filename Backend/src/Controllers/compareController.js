@@ -48,7 +48,6 @@ const scrapeWithRetry = async (scrapeFunction, url, platform) => {
       const result = await scrapeFunction(url);
       // If we got a result with data, return it immediately
       if (result && Object.keys(result).length > 0) {
-        console.log(`${platform} scraping successful on attempt ${4 - retries}`);
         return result;
       }
       // If we got an empty result, throw error to trigger retry
@@ -431,6 +430,14 @@ export const compareProducts = async (req, res) => {
 
     // Wait for all scraping to complete in parallel
     const productDetails = await Promise.all(scrapePromises);
+
+    // If both product details are empty, return 404
+    if (
+      (!productDetails[0] || Object.keys(productDetails[0]).length === 0) &&
+      (!productDetails[1] || Object.keys(productDetails[1]).length === 0)
+    ) {
+      return res.status(404).json({ error: 'Please try again later.' });
+    }
 
     // Combine all unique keys from both products
     const allKeys = new Set([

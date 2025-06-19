@@ -44,6 +44,7 @@ function App() {
         <Toaster
           position="top-right"
           toastOptions={{
+            className: 'custom-toast',
             duration: 3000,
             style: {
               background: isDarkMode ? '#1f2937' : '#ffffff',

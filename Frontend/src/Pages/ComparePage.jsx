@@ -69,7 +69,7 @@ const ComparePage = () => {
         setComparisonData(mergedData);
       } catch (error) {
         console.error('Error fetching comparison data:', error);
-        toast.error('Failed to fetch comparison data');
+        toast.error(error?.response?.data?.error || "Something went wrong!");
       } finally {
         setLoading(false);
       }
