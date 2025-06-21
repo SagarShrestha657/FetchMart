@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import useChatStore from '../States/chatStore';
-import { FiSend, FiArrowLeft, FiTrash2 } from 'react-icons/fi';
-import { useNavigate } from 'react-router-dom';
+import { FiSend, FiTrash2 } from 'react-icons/fi';
 import axios from 'axios';
 
 const Chat = () => {
@@ -9,7 +8,6 @@ const Chat = () => {
   const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
   const { messages, addMessage, isLoading, setLoading, clearMessages } = useChatStore();
-  const navigate = useNavigate();
 
   const BACKEND_URL =
     import.meta.env.MODE === "development"
