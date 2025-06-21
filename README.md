@@ -15,9 +15,22 @@ A modern web application that helps users compare product prices across multiple
 
 ## 🛠️ Tech Stack
 
-**Frontend**: React 19, Vite, Tailwind CSS, Material-UI, Zustand, React Router
-**Backend**: Node.js, Express.js, Puppeteer, Cheerio
-**AI**: Cohere AI (Command model)
+**Frontend:**
+- React 19 - Modern React with latest features
+- Vite - Fast build tool and dev server
+- Tailwind CSS - Utility-first CSS framework
+- Material-UI - React component library
+- Zustand - Lightweight state management
+- React Router - Client-side routing
+
+**Backend:**
+- Node.js - JavaScript runtime
+- Express.js - Web application framework
+- Puppeteer - Headless browser automation
+- Cheerio - Server-side HTML parsing
+
+**AI:**
+- Cohere AI (Command model) - AI-powered product recommendations and chat assistance
 
 ## 🚀 Quick Start
 
