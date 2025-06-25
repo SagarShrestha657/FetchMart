@@ -604,7 +604,7 @@ async function scrapeAjio(query, page = 1, signal) {
                     console.log(html.includes("verify you are human")) 
                     console.log(html.includes("blocked") )
                     console.log(html.includes("error") )// (optional, for generic error pages)
-                    ccccc
+                cccccc
                
                 const $ = cheerio.load(html);
                 const items = [];
