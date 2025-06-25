@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import randomUseragent from "random-useragent";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import fs from 'fs';
 
 puppeteer.use(StealthPlugin());
 
@@ -83,20 +84,24 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
 }
 
 // Scraper Helper
-async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
+async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, proxy = null) {
     const userAgent = randomUseragent.getRandom();
     let browser = null;
     try {
+        const launchArgs = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1920x1080',
+        ];
+        if (proxy) {
+            launchArgs.push(`--proxy-server=${proxy}`);
+        }
         const launchOptions = {
             headless: "New",
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--window-size=1920x1080',
-            ],
+            args: launchArgs,
             executablePath: process.env.NODE_ENV === "production"
                 ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
                 : process.platform === 'win32'
@@ -585,6 +590,15 @@ async function scrapeMyntra(query, page = 1, signal) {
 async function scrapeAjio(query, page = 1, signal) {
     return retryOperation(async () => {
         try {
+            // Fetch working proxies from API
+            let proxies = await getWorkingProxies();
+            let proxy = null;
+            if (proxies.length > 0) {
+                proxy = proxies[Math.floor(Math.random() * proxies.length)];
+                console.log('Using proxy for Ajio:', proxy);
+            } else {
+                console.warn('No working proxies available, running without proxy');
+            }
             const url = `https://www.ajio.com/search/?text=${encodeURIComponent(query)}&page=${page}`;
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
@@ -599,12 +613,20 @@ async function scrapeAjio(query, page = 1, signal) {
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
                
-                    console.log(html.includes("CAPTCHA"))//||
-                    console.log(html.includes("Access Denied")) 
-                    console.log(html.includes("verify you are human")) 
-                    console.log(html.includes("blocked") )
-                    console.log(html.includes("error") )// (optional, for generic error pages)
-                cccccc
+                const isBlocked = (
+                    html.includes("CAPTCHA") ||
+                    html.includes("Access Denied") ||
+                    html.includes("verify you are human") ||
+                    html.includes("blocked") ||
+                    html.includes("error")
+                );
+
+                if (isBlocked) {
+                    // Take a screenshot for debugging
+                    await pageObj.screenshot({ path: `ajio_blocked_${Date.now()}.png`, fullPage: true });
+                    console.log("Blocked or fake page detected! Screenshot saved.");
+                    return [];
+                }
                
                 const $ = cheerio.load(html);
                 const items = [];
@@ -708,7 +730,7 @@ async function scrapeAjio(query, page = 1, signal) {
                 });
 
                 return items;
-            });
+            }, proxy);
         } catch (error) {
             if (error.message === 'Request aborted') {
                 console.log('Ajio scraping aborted');
@@ -718,6 +740,38 @@ async function scrapeAjio(query, page = 1, signal) {
             throw error;
         }
     }, 3, signal, 'Ajio');
+}
+
+async function fetchProxies() {
+    const res = await axios.get('https://www.proxy-list.download/api/v1/get?type=http');
+    return res.data.split('\r\n').filter(Boolean);
+}
+
+async function testProxy(proxy) {
+    try {
+        const res = await axios.get('https://httpbin.org/ip', {
+            proxy: {
+                host: proxy.split(':')[0],
+                port: parseInt(proxy.split(':')[1])
+            },
+            timeout: 3000
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function getWorkingProxies() {
+    const proxies = await fetchProxies();
+    const working = [];
+    for (const proxy of proxies) {
+        if (await testProxy(proxy)) {
+            working.push(proxy);
+        }
+        if (working.length >= 10) break; // Limit to 10 working proxies
+    }
+    return working;
 }
 
 export { scrapeWithProxyAndUserAgent, scrapeFlipkart, scrapeAmazon, scrapeMeesho, scrapeMyntra, scrapeAjio }; 
