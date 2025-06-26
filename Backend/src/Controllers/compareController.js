@@ -275,6 +275,16 @@ const scrapeAjio = async (url) => {
   let browser = null;
 
   try {
+    const isProduction = process.env.NODE_ENV === "production";
+    const executablePath = isProduction
+      ? process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome'
+      : (
+        process.platform === 'win32'
+          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+          : process.platform === 'darwin'
+            ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+            : '/usr/bin/google-chrome' // or '/usr/bin/chromium-browser' for Linux dev
+      );
     browser = await puppeteer.launch({
       headless: 'new',
       args: [
@@ -285,13 +295,7 @@ const scrapeAjio = async (url) => {
         '--disable-gpu',
         '--window-size=1920x1080',
       ],
-      executablePath: process.env.NODE_ENV === "production"
-        ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
-        : process.platform === 'win32'
-          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-          : process.platform === 'darwin'
-            ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-            : '/usr/bin/google-chrome',
+      executablePath,
       ignoreHTTPSErrors: true,
       timeout: 60000
     });
@@ -333,7 +337,7 @@ const scrapeAjio = async (url) => {
     await page.evaluate(() => {
       window.scrollBy(0, window.innerHeight);
     });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Second scroll
     await page.evaluate(() => {

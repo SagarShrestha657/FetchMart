@@ -77,43 +77,44 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
             if (i === maxRetries - 1) {
                 throw error;
             }
-            await new Promise(resolve => setTimeout(resolve, (i + 1) * 1000));
+            await new Promise(resolve => setTimeout(resolve, (i + 1) * 2000));
         }
     }
     throw lastError;
 }
 
 // Scraper Helper
-async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, proxy = null) {
+async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
     let browser = null;
+    let context = null;
     try {
-        const launchArgs = [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu',
-            '--window-size=1920x1080',
-        ];
-        if (proxy) {
-            launchArgs.push(`--proxy-server=${proxy}`);
-        }
+        const isProduction = process.env.NODE_ENV === "production";
+        const executablePath = isProduction
+            ? process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome'
+            : (process.platform === 'win32'
+                ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+                : process.platform === 'darwin'
+                    ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                    : '/usr/bin/google-chrome');
+
         const launchOptions = {
-            headless: "New",
-            args: launchArgs,
-            executablePath: process.env.NODE_ENV === "production"
-                ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
-                : process.platform === 'win32'
-                    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-                    : process.platform === 'darwin'
-                        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-                        : '/usr/bin/google-chrome',
+            headless: "new",
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920x1080',
+            ],
+            executablePath,
             ignoreHTTPSErrors: true,
             timeout: 60000
         };
         browser = await puppeteer.launch(launchOptions);
-        const page = await browser.newPage();
+        context = await browser.createIncognitoBrowserContext();
+        const page = await context.newPage();
         if (userAgent) {
             await page.setUserAgent(userAgent);
         }
@@ -122,10 +123,10 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, proxy = null) 
         page.on('request', (req) => {
             const type = req.resourceType();
             if ([
-                'image',
+                // 'image',
                 'stylesheet',
                 'font',
-                'media',
+                // 'media',
                 'websocket',
                 'manifest',
                 'other'
@@ -153,6 +154,14 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc, proxy = null) 
         console.error(`Error scraping ${url}:`, error.message);
         throw error;
     } finally {
+        if (context) {
+            try {
+                await context.close();
+                console.log('Incognito context closed successfully');
+            } catch (err) {
+                console.error('Error closing incognito context:', err.message);
+            }
+        }
         if (browser) {
             try {
                 await browser.close();
@@ -390,6 +399,8 @@ async function scrapeMeesho(query, page = 1, signal) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
                 const $ = cheerio.load(html);
@@ -590,15 +601,6 @@ async function scrapeMyntra(query, page = 1, signal) {
 async function scrapeAjio(query, page = 1, signal) {
     return retryOperation(async () => {
         try {
-            // Fetch working proxies from API
-            let proxies = await getWorkingProxies();
-            let proxy = null;
-            if (proxies.length > 0) {
-                proxy = proxies[Math.floor(Math.random() * proxies.length)];
-                console.log('Using proxy for Ajio:', proxy);
-            } else {
-                console.warn('No working proxies available, running without proxy');
-            }
             const url = `https://www.ajio.com/search/?text=${encodeURIComponent(query)}&page=${page}`;
             return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
@@ -609,6 +611,8 @@ async function scrapeAjio(query, page = 1, signal) {
                     await pageObj.evaluate(() => window.scrollBy(0, window.innerHeight));
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
@@ -730,7 +734,7 @@ async function scrapeAjio(query, page = 1, signal) {
                 });
 
                 return items;
-            }, proxy);
+            });
         } catch (error) {
             if (error.message === 'Request aborted') {
                 console.log('Ajio scraping aborted');
@@ -740,38 +744,6 @@ async function scrapeAjio(query, page = 1, signal) {
             throw error;
         }
     }, 3, signal, 'Ajio');
-}
-
-async function fetchProxies() {
-    const res = await axios.get('https://www.proxy-list.download/api/v1/get?type=http');
-    return res.data.split('\r\n').filter(Boolean);
-}
-
-async function testProxy(proxy) {
-    try {
-        const res = await axios.get('https://httpbin.org/ip', {
-            proxy: {
-                host: proxy.split(':')[0],
-                port: parseInt(proxy.split(':')[1])
-            },
-            timeout: 3000
-        });
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-async function getWorkingProxies() {
-    const proxies = await fetchProxies();
-    const working = [];
-    for (const proxy of proxies) {
-        if (await testProxy(proxy)) {
-            working.push(proxy);
-        }
-        if (working.length >= 10) break; // Limit to 10 working proxies
-    }
-    return working;
 }
 
 export { scrapeWithProxyAndUserAgent, scrapeFlipkart, scrapeAmazon, scrapeMeesho, scrapeMyntra, scrapeAjio }; 
