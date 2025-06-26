@@ -1,7 +1,10 @@
 import * as cheerio from "cheerio";
 import axios from 'axios';
 import randomUseragent from "random-useragent";
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+puppeteer.use(StealthPlugin());
 
 // Common headers to mimic a real browser
 const commonHeaders = {
@@ -123,7 +126,7 @@ const scrapeAmazon = async (url) => {
     });
   });
 
-  console.log('Amazon Details Length:', Object.keys(Object.fromEntries(details)).length);
+
   return Object.fromEntries(details);
 };
 
@@ -180,7 +183,7 @@ const scrapeFlipkart = async (url) => {
     }
   });
 
-  console.log('Flipkart Details Length:', Object.keys(Object.fromEntries(details)).length);
+
   return Object.fromEntries(details);
 };
 
@@ -244,7 +247,6 @@ const scrapeMeesho = async (url) => {
     }
   });
 
-  console.log('Meesho Details Length:', Object.keys(Object.fromEntries(details)).length);
   return Object.fromEntries(details);
 };
 
@@ -274,8 +276,18 @@ const scrapeMyntra = async (url) => {
 const scrapeAjio = async (url) => {
   const userAgent = randomUseragent.getRandom();
   let browser = null;
-
+  let context = null;
   try {
+    const isProduction = process.env.NODE_ENV === "production";
+    const executablePath = isProduction
+      ? process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome'
+      : (
+        process.platform === 'win32'
+          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+          : process.platform === 'darwin'
+            ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+            : '/usr/bin/google-chrome'
+      );
     browser = await puppeteer.launch({
       headless: 'new',
       args: [
@@ -286,36 +298,48 @@ const scrapeAjio = async (url) => {
         '--disable-gpu',
         '--window-size=1920x1080',
       ],
-      executablePath: process.env.NODE_ENV === "production"
-        ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
-        : process.platform === 'win32'
-          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-          : process.platform === 'darwin'
-            ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-            : '/usr/bin/google-chrome',
+      executablePath,
       ignoreHTTPSErrors: true,
-      timeout: 45000
+      timeout: 60000
     });
-
-    const page = await browser.newPage();
-
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     if (userAgent) {
       await page.setUserAgent(userAgent);
     }
+
+    // Block unnecessary resources
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if ([
+        'image',
+        'stylesheet',
+        'font',
+        'media',
+        'websocket',
+        'manifest',
+        'other'
+      ].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
     await page.setViewport({ width: 1920, height: 1080 });
 
     // Set longer timeout for page load
     await page.goto(url, {
       waitUntil: "networkidle2",
-      timeout: 45000
+      timeout: 60000
     });
 
     // First scroll
     await page.evaluate(() => {
       window.scrollBy(0, window.innerHeight);
     });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Second scroll
     await page.evaluate(() => {
@@ -329,19 +353,6 @@ const scrapeAjio = async (url) => {
     // Check if page length is below threshold
     if (html.length < 5000) {
       return null;
-    }
-
-    // Wait for the product details to load
-    const found = await page.waitForSelector('ul.prod-list li.detail-list, div.prod-list li.detail-list', { timeout: 10000 })
-      .catch(() => {
-        console.log('Product details selector not found')
-        return []
-      }
-      );
-
-    if (!found) {
-      console.log('Ajio: Product cards selector not found!');
-      return [];
     }
 
     // Get the page content
@@ -375,7 +386,6 @@ const scrapeAjio = async (url) => {
       }
     });
 
-    console.log('Ajio Details Length:', Object.keys(Object.fromEntries(details)).length);
     return Object.fromEntries(details);
 
   } catch (error) {
@@ -385,6 +395,13 @@ const scrapeAjio = async (url) => {
     });
     throw error;
   } finally {
+    if (context) {
+      try {
+        await context.close();
+      } catch (err) {
+        console.error('Error closing incognito context:', err.message);
+      }
+    }
     if (browser) {
       await browser.close();
     }

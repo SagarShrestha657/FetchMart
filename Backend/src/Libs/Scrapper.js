@@ -76,7 +76,7 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
             if (i === maxRetries - 1) {
                 throw error;
             }
-            await new Promise(resolve => setTimeout(resolve, (i + 1) * 1000));
+            await new Promise(resolve => setTimeout(resolve, (i + 1) * 2000));
         }
     }
     throw lastError;
@@ -86,9 +86,19 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
 async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
     let browser = null;
+    let context = null;
     try {
+        const isProduction = process.env.NODE_ENV === "production";
+        const executablePath = isProduction
+            ? process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome'
+            : (process.platform === 'win32'
+                ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+                : process.platform === 'darwin'
+                    ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                    : '/usr/bin/google-chrome');
+
         const launchOptions = {
-            headless: "New",
+            headless: "new",
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -97,18 +107,13 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-gpu',
                 '--window-size=1920x1080',
             ],
-            executablePath: process.env.NODE_ENV === "production"
-                ? (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium')
-                : process.platform === 'win32'
-                    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-                    : process.platform === 'darwin'
-                        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-                        : '/usr/bin/google-chrome',
+            executablePath,
             ignoreHTTPSErrors: true,
             timeout: 60000
         };
         browser = await puppeteer.launch(launchOptions);
-        const page = await browser.newPage();
+        context = await browser.createBrowserContext();
+        const page = await context.newPage();
         if (userAgent) {
             await page.setUserAgent(userAgent);
         }
@@ -148,10 +153,16 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         console.error(`Error scraping ${url}:`, error.message);
         throw error;
     } finally {
+        if (context) {
+            try {
+                await context.close();
+            } catch (err) {
+                console.error('Error closing incognito context:', err.message);
+            }
+        }
         if (browser) {
             try {
                 await browser.close();
-                console.log('Browser closed successfully');
             } catch (err) {
                 console.error('Error closing browser:', err.message);
                 if (process.platform === 'win32') {
@@ -385,6 +396,8 @@ async function scrapeMeesho(query, page = 1, signal) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
                 const $ = cheerio.load(html);
@@ -596,16 +609,24 @@ async function scrapeAjio(query, page = 1, signal) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
-               
-                    console.log(html.includes("CAPTCHA"))//||
-                    console.log(html.includes("Access Denied")) 
-                    console.log(html.includes("verify you are human")) 
-                    console.log(html.includes("blocked") )
-                    console.log(html.includes("error") )// (optional, for generic error pages)
-                    ccccc
-               
+
+                const isBlocked = (
+                    html.includes("CAPTCHA") ||
+                    html.includes("Access Denied") ||
+                    html.includes("verify you are human") ||
+                    html.includes("blocked") ||
+                    html.includes("error")
+                );
+
+                if (isBlocked) {
+                    console.log("Blocked or fake page detected!");
+                    return [];
+                }
+
                 const $ = cheerio.load(html);
                 const items = [];
                 const seenProducts = new Set();
