@@ -1,7 +1,10 @@
 import * as cheerio from "cheerio";
 import axios from 'axios';
 import randomUseragent from "random-useragent";
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+puppeteer.use(StealthPlugin());
 
 // Common headers to mimic a real browser
 const commonHeaders = {
@@ -273,7 +276,7 @@ const scrapeMyntra = async (url) => {
 const scrapeAjio = async (url) => {
   const userAgent = randomUseragent.getRandom();
   let browser = null;
-
+  let context = null;
   try {
     const isProduction = process.env.NODE_ENV === "production";
     const executablePath = isProduction
@@ -283,7 +286,7 @@ const scrapeAjio = async (url) => {
           ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
           : process.platform === 'darwin'
             ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-            : '/usr/bin/google-chrome' // or '/usr/bin/chromium-browser' for Linux dev
+            : '/usr/bin/google-chrome'
       );
     browser = await puppeteer.launch({
       headless: 'new',
@@ -299,9 +302,8 @@ const scrapeAjio = async (url) => {
       ignoreHTTPSErrors: true,
       timeout: 60000
     });
-
-    const page = await browser.newPage();
-
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     if (userAgent) {
       await page.setUserAgent(userAgent);
     }
@@ -393,6 +395,14 @@ const scrapeAjio = async (url) => {
     });
     throw error;
   } finally {
+    if (context) {
+      try {
+        await context.close();
+        console.log('Incognito context closed successfully');
+      } catch (err) {
+        console.error('Error closing incognito context:', err.message);
+      }
+    }
     if (browser) {
       await browser.close();
     }

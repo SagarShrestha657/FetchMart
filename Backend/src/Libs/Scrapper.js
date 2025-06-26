@@ -3,7 +3,6 @@ import * as cheerio from "cheerio";
 import randomUseragent from "random-useragent";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import fs from 'fs';
 
 puppeteer.use(StealthPlugin());
 
@@ -113,7 +112,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
             timeout: 60000
         };
         browser = await puppeteer.launch(launchOptions);
-        context = await browser.createIncognitoBrowserContext();
+        context = await browser.createBrowserContext();
         const page = await context.newPage();
         if (userAgent) {
             await page.setUserAgent(userAgent);
@@ -123,10 +122,10 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         page.on('request', (req) => {
             const type = req.resourceType();
             if ([
-                // 'image',
+                'image',
                 'stylesheet',
                 'font',
-                // 'media',
+                'media',
                 'websocket',
                 'manifest',
                 'other'
@@ -145,7 +144,6 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
         const html = await page.content();
         console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
         if (html.length < 5000) {
-            console.log(html)
             return null;
         }
         const products = await pageEvaluateFunc(page);
@@ -616,7 +614,7 @@ async function scrapeAjio(query, page = 1, signal) {
 
                 // Get the final HTML after scrolling
                 const html = await pageObj.content();
-               
+
                 const isBlocked = (
                     html.includes("CAPTCHA") ||
                     html.includes("Access Denied") ||
@@ -626,12 +624,10 @@ async function scrapeAjio(query, page = 1, signal) {
                 );
 
                 if (isBlocked) {
-                    // Take a screenshot for debugging
-                    await pageObj.screenshot({ path: `ajio_blocked_${Date.now()}.png`, fullPage: true });
-                    console.log("Blocked or fake page detected! Screenshot saved.");
+                    console.log("Blocked or fake page detected!");
                     return [];
                 }
-               
+
                 const $ = cheerio.load(html);
                 const items = [];
                 const seenProducts = new Set();
