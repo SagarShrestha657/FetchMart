@@ -25,7 +25,7 @@ const makeRequest = async (url, signal, retries = 3) => {
                     'Accept-Language': 'en-US,en;q=0.5',
                     'Connection': 'keep-alive'
                 },
-                timeout: 15000,
+                timeout: 30000,
                 signal,
                 maxRedirects: 5,
                 validateStatus: function (status) {
@@ -83,7 +83,7 @@ async function retryOperation(operation, maxRetries = 3, signal, platformName) {
 }
 
 // Scraper Helper
-async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
+async function scrapeWithUserAgent(url, pageEvaluateFunc) {
     const userAgent = randomUseragent.getRandom();
     let browser = null;
     let context = null;
@@ -105,7 +105,7 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--window-size=1920x1080',
+                '--window-size=1920x1080'
             ],
             executablePath,
             ignoreHTTPSErrors: true,
@@ -136,15 +136,16 @@ async function scrapeWithProxyAndUserAgent(url, pageEvaluateFunc) {
             }
         });
         await page.setViewport({ width: 1920, height: 1080 });
+
         await page.goto(url, {
             waitUntil: "networkidle2",
             timeout: 60000
         });
+
         await new Promise(resolve => setTimeout(resolve, 2000));
         const html = await page.content();
         console.log(`Loaded URL: ${url}\nPage length: ${html.length}`);
         if (html.length < 5000) {
-            console.log(html)
             return null;
         }
         const products = await pageEvaluateFunc(page);
@@ -386,7 +387,7 @@ async function scrapeMeesho(query, page = 1, signal) {
         try {
             const url = `https://www.meesho.com/search?q=${encodeURIComponent(query)}&page=${page}`;
 
-            return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
+            return scrapeWithUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
                 // Scroll to load more products
@@ -599,7 +600,7 @@ async function scrapeAjio(query, page = 1, signal) {
     return retryOperation(async () => {
         try {
             const url = `https://www.ajio.com/search/?text=${encodeURIComponent(query)}&page=${page}`;
-            return scrapeWithProxyAndUserAgent(url, async (pageObj) => {
+            return scrapeWithUserAgent(url, async (pageObj) => {
                 if (signal?.aborted) throw new Error('Request aborted');
 
                 // Scroll to load more products
@@ -618,13 +619,11 @@ async function scrapeAjio(query, page = 1, signal) {
                     html.includes("CAPTCHA") ||
                     html.includes("Access Denied") ||
                     html.includes("verify you are human") ||
-                    html.includes("blocked") ||
-                    html.includes("error")
+                    html.includes("blocked")
                 );
 
                 if (isBlocked) {
                     console.log("Blocked or fake page detected!");
-                    return [];
                 }
 
                 const $ = cheerio.load(html);
@@ -741,4 +740,4 @@ async function scrapeAjio(query, page = 1, signal) {
     }, 3, signal, 'Ajio');
 }
 
-export { scrapeWithProxyAndUserAgent, scrapeFlipkart, scrapeAmazon, scrapeMeesho, scrapeMyntra, scrapeAjio }; 
+export { scrapeWithUserAgent as scrapeWithProxyAndUserAgent, scrapeFlipkart, scrapeAmazon, scrapeMeesho, scrapeMyntra, scrapeAjio };

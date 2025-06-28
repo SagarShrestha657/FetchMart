@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import useChatStore from '../States/chatStore';
 import { FiSend, FiTrash2 } from 'react-icons/fi';
 import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
 
 const Chat = () => {
   const [input, setInput] = useState('');
@@ -50,7 +51,8 @@ const Chat = () => {
 
       addMessage({
         text: response.data.response,
-        sender: 'ai'
+        sender: 'ai',
+        markdown: response.data.markdown || false
       });
     } catch (error) {
       console.error('Error getting response:', error);
@@ -133,7 +135,11 @@ const Chat = () => {
                     : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-xs sm:text-base'
                 }`}
               >
-                {message.text}
+                {message?.markdown && message.sender === 'ai' ? (
+                  <ReactMarkdown>{message.text}</ReactMarkdown>
+                ) : (
+                  message.text
+                )}
               </div>
             </div>
           ))}

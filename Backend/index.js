@@ -8,7 +8,7 @@ import ApiRoutes from './src/Routes/ApiRoutes.js';
 dotenv.config();
 
 // Increase max listeners limit
-EventEmitter.defaultMaxListeners = 100;
+EventEmitter.defaultMaxListeners = 1000;
 
 const app = express();
 app.use(cors({
